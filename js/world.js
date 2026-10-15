@@ -4,21 +4,24 @@
 //  terreno especial (lento, dañino, pendientes, hielo), trampas,
 //  zonas especiales, santuarios con guardián, cofres escondidos,
 //  niebla de guerra y campo de flujo (BFS) para que los enemigos
-//  rodeen los muros. Cada partida genera mapas distintos.
+//  rodeen los muros. Cada baldosa tiene su bioma, así el modo de
+//  Hordas Infinitas mezcla bosque, cripta y forja en un solo mapa.
 // =====================================================================
 
-const TILE = 80, MAPN = 64;                    // WORLD = TILE * MAPN
+const TILE = 80;
+let MAPN = 64;                                  // baldosas por lado (WORLD = TILE * MAPN)
 const TF = 0, TW = 1, TSLOW = 2, THURT = 3, TSLOPE = 4, TICE = 5;
 const TRAP_PERIOD = 2.8;
+const BIOME_KEYS = ['forest', 'crypt', 'forge'];   // mismo orden que LEVELS
 
 const TERRAIN = {
-  forest: { top: ['#2c4a26', '#365c2e', '#24401f', '#41693a'], face: ['#1a2a17', '#13200f'], slow: ['Pantano', '#2a3a1c', 'Te ralentiza'], hurt: ['Zarzas venenosas', '#8a3a9a', 9], slope: 'Ladera', ice: null, trap: 'spikes', fogc: '#05090a' },
-  crypt:  { top: ['#4a5068', '#555c78', '#3e4359', '#626a88'], face: ['#23263a', '#1a1c2b'], slow: ['Nieve profunda', '#b8c8e8', 'Te ralentiza'], hurt: ['Runas malditas', '#6a3aff', 11], slope: 'Escalinata', ice: 'Hielo resbaladizo', trap: 'frost', fogc: '#04050c' },
-  forge:  { top: ['#4a2a22', '#5a3326', '#3a201a', '#6a3a2a'], face: ['#24120e', '#1a0c09'], slow: ['Ceniza', '#6a5a52', 'Te ralentiza'], hurt: ['Lava', '#ff5a1a', 18], slope: 'Pendiente de escoria', ice: null, trap: 'vent', fogc: '#0a0403' },
+  forest: { top: ['#2c4a26', '#365c2e', '#24401f', '#41693a'], face: ['#1a2a17', '#13200f'], rim: '#5a9a4a', slow: ['Pantano', '#2a3a1c'], hurt: ['Zarzas venenosas', '#8a3a9a', 9], slope: 'Ladera', ice: null, trap: 'spikes', fogc: '#05090a' },
+  crypt:  { top: ['#4a5068', '#555c78', '#3e4359', '#626a88'], face: ['#23263a', '#1a1c2b'], rim: '#8a92b8', slow: ['Nieve profunda', '#b8c8e8'], hurt: ['Runas malditas', '#6a3aff', 11], slope: 'Escalinata', ice: 'Hielo resbaladizo', trap: 'frost', fogc: '#04050c' },
+  forge:  { top: ['#4a2a22', '#5a3326', '#3a201a', '#6a3a2a'], face: ['#24120e', '#1a0c09'], rim: '#a0583a', slow: ['Ceniza', '#6a5a52'], hurt: ['Lava', '#ff5a1a', 18], slope: 'Pendiente de escoria', ice: null, trap: 'vent', fogc: '#0a0403' },
 };
 const ZONES = {
   sagrada: { n: 'Arboleda Sagrada', c: '#5bff8a', d: 'Regeneras 2% de vida por segundo' },
-  maldita: { n: 'Zona Maldita', c: '#b066ff', d: '+60% exp y almas, pero recibes +30% daño' },
+  maldita: { n: 'Zona Maldita', c: '#b066ff', d: '+35% exp y +60% almas, pero recibes +30% daño' },
 };
 let MAP = null;
 
@@ -30,6 +33,9 @@ const tIdx = (x, y) => {
 function tileAt(x, y) { const i = tIdx(x, y); return i < 0 ? TW : MAP.t[i]; }
 function isWall(x, y) { return tileAt(x, y) === TW; }
 function revealedAt(x, y) { const i = tIdx(x, y); return i >= 0 && MAP.fog[i] === 1; }
+function bioAt(x, y) { const i = tIdx(x, y); return i < 0 ? 0 : MAP.bio[i]; }
+function terAt(x, y) { return TERRAIN[BIOME_KEYS[bioAt(x, y)]]; }
+const hash2 = (x, y) => ((x * 73856093) ^ (y * 19349663)) >>> 0;
 
 function bfs(t, sx, sy, out) {
   const n = MAPN; out.fill(-1);
@@ -56,13 +62,16 @@ function randomFloorAround(x, y, rmin, rmax, tries) {
 }
 
 // ---------------------------------------------------------------- generación
-function genMap(L) {
-  const n = MAPN, N = n * n, c = n >> 1, TER = TERRAIN[L.biome];
+// endless = true → mapa de 110×110 (unas 3 veces el área) con los 3 biomas mezclados
+function genMap(L, endless) {
+  const n = MAPN = endless ? 110 : 64;
+  WORLD = n * TILE;
+  const N = n * n, c = n >> 1, A = N / (64 * 64);
   let t;
   const carve = (cx, cy, r) => { for (let y = cy - r; y <= cy + r; y++) for (let x = cx - r; x <= cx + r; x++) if (x > 1 && y > 1 && x < n - 2 && y < n - 2 && (x - cx) ** 2 + (y - cy) ** 2 <= r * r + 1) t[y * n + x] = TF; };
   const tunnel = (x0, y0, x1, y1) => {           // túnel serpenteante de 2 baldosas
     let x = x0, y = y0, guard = 0;
-    while ((x !== x1 || y !== y1) && guard++ < 400) {
+    while ((x !== x1 || y !== y1) && guard++ < 600) {
       if (Math.random() < 0.6) x += Math.sign(x1 - x); else y += Math.sign(y1 - y);
       if (Math.random() < 0.15) x += Math.random() < 0.5 ? -1 : 1;
       x = clamp(x, 2, n - 3); y = clamp(y, 2, n - 3);
@@ -84,45 +93,74 @@ function genMap(L) {
       }
       t = nt;
     }
-    // plazas abiertas conectadas al centro por túneles
+    // quitar muros sueltos de 1 baldosa (se veían raros)
+    for (let y = 2; y < n - 2; y++) for (let x = 2; x < n - 2; x++) {
+      const i = y * n + x; if (t[i] !== TW) continue;
+      const nb = (t[i - 1] === TW) + (t[i + 1] === TW) + (t[i - n] === TW) + (t[i + n] === TW);
+      if (nb <= 1) t[i] = TF;
+    }
     carve(c, c, 6);
-    for (let k = 0; k < 8; k++) {
+    const plazas = Math.round(8 * A);
+    for (let k = 0; k < plazas; k++) {
       const px = 8 + Math.floor(Math.random() * (n - 16)), py = 8 + Math.floor(Math.random() * (n - 16));
       carve(px, py, 3 + Math.floor(Math.random() * 3));
       tunnel(px, py, c, c);
     }
-    // todo lo que no se pueda alcanzar se vuelve muro
     const d = bfs(t, c, c, new Int32Array(N));
     let floor = 0;
     for (let i = 0; i < N; i++) { if (t[i] !== TW && d[i] < 0) t[i] = TW; if (t[i] !== TW) floor++; }
     if (floor / N > 0.42) break;
   }
+
+  // bioma por baldosa: uniforme en campaña, regiones de Voronoi en modo infinito
+  const bio = new Uint8Array(N);
+  if (!endless) bio.fill(Math.max(0, BIOME_KEYS.indexOf(L.biome)));
+  else {
+    const seeds = [{ x: c, y: c, b: 0 }];
+    const order = [1, 2, 0, 1, 2, 1, 2, 0, 1, 2];
+    for (const b of order) {
+      for (let s = 0; s < 30; s++) {
+        const x = 6 + Math.random() * (n - 12), y = 6 + Math.random() * (n - 12);
+        if (seeds.every(q => Math.hypot(q.x - x, q.y - y) > n / 5)) { seeds.push({ x, y, b }); break; }
+      }
+    }
+    for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
+      const jx = x + Math.sin(y * 0.35) * 2.2, jy = y + Math.cos(x * 0.3) * 2.2;   // bordes orgánicos
+      let best = 1e9, b = 0;
+      for (const q of seeds) { const d2 = (q.x - jx) ** 2 + (q.y - jy) ** 2; if (d2 < best) { best = d2; b = q.b; } }
+      bio[y * n + x] = b;
+    }
+  }
+  const TERi = i => TERRAIN[BIOME_KEYS[bio[i]]];
+
   const dir = new Float32Array(N);
   const D = bfs(t, c, c, new Int32Array(N));
   const floorTiles = []; for (let i = 0; i < N; i++) if (t[i] === TF) floorTiles.push(i);
-  const farFromStart = (i, m) => D[i] >= m;
-  const rndFloor = m => { for (let k = 0; k < 60; k++) { const i = pick(floorTiles); if (t[i] === TF && farFromStart(i, m)) return i; } return pick(floorTiles); };
+  const rndFloor = m => { for (let k = 0; k < 60; k++) { const i = pick(floorTiles); if (t[i] === TF && D[i] >= m) return i; } return pick(floorTiles); };
 
   // terreno especial en manchas
-  const blob = (type, count, rmin, rmax) => {
+  const blob = (type, count, rmin, rmax, onlyBio) => {
     for (let k = 0; k < count; k++) {
       const i = rndFloor(9), cx = i % n, cy = (i / n) | 0, r = rmin + Math.random() * (rmax - rmin), a = Math.random() * TAU;
       for (let y = Math.floor(cy - r); y <= cy + r; y++) for (let x = Math.floor(cx - r); x <= cx + r; x++) {
         if (x < 0 || y < 0 || x >= n || y >= n) continue;
         const j = y * n + x, dd = Math.hypot(x - cx, y - cy);
+        if (onlyBio !== undefined && bio[j] !== onlyBio) continue;
         if (t[j] === TF && dd <= r && (dd < r - 1 || Math.random() < 0.6) && D[j] >= 7) { t[j] = type; dir[j] = a; }
       }
     }
   };
-  blob(TSLOW, 10, 2, 4.5);
-  blob(THURT, 7, 1, 2.5);
-  blob(TSLOPE, 7, 2, 3.5);
-  if (TER.ice) blob(TICE, 7, 3, 5);
+  blob(TSLOW, Math.round(10 * A), 2, 4.5);
+  blob(THURT, Math.round(7 * A), 1, 2.5);
+  blob(TSLOPE, Math.round(7 * A), 2, 3.5);
+  if (endless) blob(TICE, Math.round(7 * A), 3, 5, 1);
+  else if (TERRAIN[L.biome].ice) blob(TICE, 7, 3, 5);
 
   // santuarios: muestreo del punto más lejano entre sí y del inicio
-  const shrineTypes = Object.keys(SHRINES).sort(() => Math.random() - 0.5);
+  const nShr = endless ? 12 : 5;
+  const types = []; while (types.length < nShr) types.push(...Object.keys(SHRINES).sort(() => Math.random() - 0.5));
   const sIdx = [];
-  for (let k = 0; k < 5; k++) {
+  for (let k = 0; k < nShr; k++) {
     let best = -1, bs = -1;
     for (let s = 0; s < 250; s++) {
       const i = pick(floorTiles); if (D[i] < 14) continue;
@@ -137,38 +175,37 @@ function genMap(L) {
   sIdx.forEach((i, k) => {
     const tx = i % n, ty = (i / n) | 0;
     for (let y = ty - 2; y <= ty + 2; y++) for (let x = tx - 2; x <= tx + 2; x++) if (x > 1 && y > 1 && x < n - 2 && y < n - 2 && t[y * n + x] !== TW) t[y * n + x] = TF;
-    const type = shrineTypes[k % shrineTypes.length];
-    const sh = { type, x: (tx + 0.5) * TILE, y: (ty + 0.5) * TILE, prog: 0, used: false, guard: type !== 'maldito', g: null };
-    shrines.push(sh);
-    // anillo de trampas alrededor del santuario
+    const type = types[k];
+    shrines.push({ type, x: (tx + 0.5) * TILE, y: (ty + 0.5) * TILE, prog: 0, used: false, guard: type !== 'maldito', g: null });
     const ring = [];
     for (let y = ty - 3; y <= ty + 3; y++) for (let x = tx - 3; x <= tx + 3; x++) {
       const dd = Math.hypot(x - tx, y - ty);
       if (dd >= 2 && dd <= 3.2 && x > 1 && y > 1 && x < n - 2 && y < n - 2 && t[y * n + x] === TF) ring.push([x, y]);
     }
-    ring.sort(() => Math.random() - 0.5).slice(0, 9).forEach(([x, y]) => traps.push(mkTrap(x, y, TER.trap)));
+    ring.sort(() => Math.random() - 0.5).slice(0, 9).forEach(([x, y]) => traps.push(mkTrap(x, y, TERi(y * n + x).trap)));
   });
-  // grupos de trampas en pasillos
-  for (let k = 0; k < 14; k++) {
+  for (let k = 0; k < Math.round(14 * A); k++) {
     const i = rndFloor(7), cx = i % n, cy = (i / n) | 0;
     const m = 2 + Math.floor(Math.random() * 4);
     for (let q = 0; q < m; q++) {
       const x = cx + Math.floor(rnd(-2, 3)), y = cy + Math.floor(rnd(-2, 3));
-      if (x > 1 && y > 1 && x < n - 2 && y < n - 2 && t[y * n + x] === TF && !traps.some(tr => tr.tx === x && tr.ty === y)) traps.push(mkTrap(x, y, TER.trap));
+      if (x > 1 && y > 1 && x < n - 2 && y < n - 2 && t[y * n + x] === TF && !traps.some(tr => tr.tx === x && tr.ty === y)) traps.push(mkTrap(x, y, TERi(y * n + x).trap));
     }
   }
   // zonas especiales
   const zones = [];
-  for (const type of ['sagrada', 'maldita', 'sagrada', 'maldita']) {
+  const nZ = endless ? 10 : 4;
+  for (let z = 0; z < nZ; z++) {
+    const type = z % 2 ? 'maldita' : 'sagrada';
     for (let s = 0; s < 40; s++) {
       const i = rndFloor(10), x = (i % n + 0.5) * TILE, y = (((i / n) | 0) + 0.5) * TILE;
-      if (shrines.some(sh => Math.hypot(sh.x - x, sh.y - y) < 7 * TILE) || zones.some(z => Math.hypot(z.x - x, z.y - y) < 10 * TILE)) continue;
+      if (shrines.some(sh => Math.hypot(sh.x - x, sh.y - y) < 7 * TILE) || zones.some(q => Math.hypot(q.x - x, q.y - y) < 10 * TILE)) continue;
       zones.push({ type, x, y, r: rnd(3.5, 5) * TILE });
       break;
     }
   }
   // cofres escondidos en callejones sin salida
-  const chests = [];
+  const chests = [], nCh = endless ? 8 : 3;
   const deadEnds = floorTiles.filter(i => {
     if (t[i] !== TF || D[i] < 10) return false;
     const x = i % n, y = (i / n) | 0; let w = 0;
@@ -176,35 +213,34 @@ function genMap(L) {
     return w >= 5;
   }).sort(() => Math.random() - 0.5);
   for (const i of deadEnds) {
-    if (chests.length >= 3) break;
+    if (chests.length >= nCh) break;
     const x = (i % n + 0.5) * TILE, y = (((i / n) | 0) + 0.5) * TILE;
     if (chests.some(ch => Math.hypot(ch.x - x, ch.y - y) < 15 * TILE)) continue;
     chests.push({ k: 'chest', x, y, tier: 1, hidden: true });
   }
-  // decoración sólida (árboles, rocas…) sobre suelo normal
+  // decoración sólida según el bioma de cada baldosa
   const props = [];
-  for (let k = 0; k < 320; k++) {
+  for (let k = 0; k < Math.round(320 * A); k++) {
     const i = pick(floorTiles); if (t[i] !== TF || D[i] < 5) continue;
     const x = (i % n + rnd(0.2, 0.8)) * TILE, y = (((i / n) | 0) + rnd(0.2, 0.8)) * TILE;
     if (shrines.some(sh => Math.hypot(sh.x - x, sh.y - y) < 3.2 * TILE) || chests.some(ch => Math.hypot(ch.x - x, ch.y - y) < TILE)) continue;
     if (traps.some(tr => Math.hypot(tr.x - x, tr.y - y) < TILE * 0.8)) continue;
-    const [type] = wpick(L.props, p => p[1]);
+    const [type] = wpick(LEVELS[bio[i]].props, p => p[1]);
     const sc = { tree: 5, rock: 4, mush: 3.5, tomb: 4, pillar: 4.5, crystal: 4.5, spike: 5 }[type] * rnd(0.85, 1.15);
     const r = { tree: 16, rock: 20, mush: 10, tomb: 14, pillar: 16, crystal: 13, spike: 18 }[type] * sc / 4.5;
     if (props.some(p => (p.x - x) ** 2 + (p.y - y) ** 2 < (p.r + r + 30) ** 2)) continue;
     props.push({ kind: 'prop', type, x, y, r, sc, spr: getSpr(type), solid: true });
   }
   const decals = [];
-  for (let k = 0; k < 2200; k++) {
-    const i = pick(floorTiles);
-    decals.push({ x: (i % n + Math.random()) * TILE, y: (((i / n) | 0) + Math.random()) * TILE, col: pick(L.decal), k: Math.floor(Math.random() * 3), s: rnd(2, 4) | 0 });
+  for (let k = 0; k < Math.round(2200 * A); k++) {
+    const i = pick(floorTiles), b = bio[i], kk = Math.floor(Math.random() * 3);
+    decals.push({ x: (i % n + Math.random()) * TILE, y: (((i / n) | 0) + Math.random()) * TILE, col: pick(LEVELS[b].decal), k: kk, s: rnd(2, 4) | 0, lava: b === 2 && kk === 2 });
   }
 
   MAP = {
-    t, dir, D, traps, zones, shrines, chests, props, decals, TER,
+    n, t, bio, dir, D, traps, zones, shrines, chests, props, decals, endless,
     flow: new Int32Array(N).fill(-1), fver: 0, ptx: -1, pty: -1,
     fog: new Uint8Array(N), fogImg: new ImageData(n, n), fogC: newCanvas(n, n),
-    wallTop: makeWallTop(TER), wallFace: makeWallFace(TER),
   };
   MAP.flow = bfs(t, c, c, MAP.flow);
   return MAP;
@@ -214,34 +250,66 @@ function mkTrap(tx, ty, kind) {
   return { tx, ty, x: (tx + 0.5) * TILE, y: (ty + 0.5) * TILE, kind, off: Math.random() * TRAP_PERIOD, state: 0, cyc: -1 };
 }
 
-// texturas de muro por bioma (se generan una vez por nivel)
-function makeWallTop(TER) {
+// ---------------------------------------------------------------- texturas de muros
+// 4 variantes de techo y 3 de fachada por bioma, cacheadas para toda la sesión
+const WALLTEX = {};
+function wallTex(b) {
+  if (WALLTEX[b]) return WALLTEX[b];
+  const TER = TERRAIN[BIOME_KEYS[b]];
+  const tops = [], faces = [];
+  for (let v = 0; v < 4; v++) tops.push(makeWallTop(b, TER));
+  for (let v = 0; v < 3; v++) faces.push(makeWallFace(b, TER, v));
+  return (WALLTEX[b] = { tops, faces });
+}
+function makeWallTop(b, TER) {
   const c = newCanvas(TILE, TILE), x = c.getContext('2d');
-  const px = (cx, cy, r, col) => { x.fillStyle = col; for (let yy = -r; yy <= r; yy += 4) for (let xx = -r; xx <= r; xx += 4) if (xx * xx + yy * yy <= r * r) x.fillRect(cx + xx - 2, cy + yy - 2, 4, 4); };
-  if (TER === TERRAIN.forest) {          // follaje denso
-    x.fillStyle = '#10200d'; x.fillRect(0, 0, TILE, TILE);
-    for (let i = 0; i < 9; i++) { const cx = 8 + Math.random() * 64, cy = 8 + Math.random() * 64, r = 12 + Math.random() * 10; px(cx, cy, r, '#1f3c1a'); px(cx - 3, cy - 3, r - 5, '#2d5a26'); px(cx - 6, cy - 6, 4, '#4a8a3c'); }
-  } else if (TER === TERRAIN.crypt) {    // bloques de piedra
-    x.fillStyle = '#2a2e40'; x.fillRect(0, 0, TILE, TILE);
-    for (let r = 0; r < 4; r++) for (let k = 0; k < 3; k++) {
-      const bx = k * 28 - (r % 2) * 14 + 2, by = r * 20 + 2;
-      x.fillStyle = pick(TER.top); x.fillRect(bx, by, 24, 16);
-      x.fillStyle = 'rgba(255,255,255,0.12)'; x.fillRect(bx, by, 24, 3);
+  const px = (cx, cy, r, col) => { x.fillStyle = col; for (let yy = -r; yy <= r; yy += 4) for (let xx = -r; xx <= r; xx += 4) if (xx * xx + yy * yy <= r * r) x.fillRect(((cx + xx - 2) % TILE + TILE) % TILE, ((cy + yy - 2) % TILE + TILE) % TILE, 4, 4); };
+  if (b === 0) {          // follaje denso: copas de árbol superpuestas (envuelven en los bordes para que encajen)
+    x.fillStyle = '#1a3316'; x.fillRect(0, 0, TILE, TILE);
+    for (let i = 0; i < 8; i++) {
+      const cx = Math.random() * TILE, cy = Math.random() * TILE, r = 13 + Math.random() * 9;
+      px(cx, cy, r, '#1f3c1a'); px(cx - 3, cy - 3, r - 5, '#2b5524'); px(cx - 6, cy - 6, r - 11, '#3a6e30');
+      px(cx - 8, cy - 8, 3, '#5a9a48');
     }
-  } else {                               // basalto con grietas de lava
-    x.fillStyle = '#1e100c'; x.fillRect(0, 0, TILE, TILE);
-    for (let i = 0; i < 7; i++) px(8 + Math.random() * 64, 8 + Math.random() * 64, 10 + Math.random() * 8, pick(TER.top));
-    x.fillStyle = '#ff5a1a';
-    for (let i = 0; i < 3; i++) { let cx = Math.random() * 80, cy = Math.random() * 80; for (let k = 0; k < 6; k++) { x.fillRect(cx, cy, 4, 4); cx += rnd(-4, 8); cy += rnd(-4, 8); } }
+  } else if (b === 1) {   // losas de piedra con grietas y musgo frío
+    x.fillStyle = '#23263a'; x.fillRect(0, 0, TILE, TILE);
+    for (let r = 0; r < 4; r++) for (let k = -1; k < 3; k++) {
+      const bx = k * 28 + (r % 2) * 14 + 2, by = r * 20 + 2;
+      x.fillStyle = pick(TER.top); x.fillRect(bx, by, 25, 17);
+      x.fillStyle = 'rgba(255,255,255,0.10)'; x.fillRect(bx, by, 25, 2);
+      x.fillStyle = 'rgba(0,0,0,0.25)'; x.fillRect(bx, by + 15, 25, 2);
+      if (Math.random() < 0.25) { x.fillStyle = '#1a1c2b'; x.fillRect(bx + 6 + Math.random() * 12, by + 4, 2, 9); }
+      if (Math.random() < 0.15) { x.fillStyle = 'rgba(143,243,255,0.35)'; x.fillRect(bx + 3, by + 3, 6, 3); }
+    }
+  } else {                // basalto en placas con vetas de lava
+    x.fillStyle = TER.top[0]; x.fillRect(0, 0, TILE, TILE);          // base intermedia: sin costuras entre baldosas
+    for (let i = 0; i < 9; i++) px(Math.random() * TILE, Math.random() * TILE, 8 + Math.random() * 8, pick(TER.top));
+    x.fillStyle = 'rgba(0,0,0,0.25)';
+    for (let i = 0; i < 5; i++) x.fillRect(Math.floor(Math.random() * 20) * 4, Math.floor(Math.random() * 20) * 4, 8, 2);
+    for (let i = 0; i < 3; i++) {
+      let cx = Math.random() * 80, cy = Math.random() * 80;
+      for (let k = 0; k < 7; k++) { x.fillStyle = k % 3 ? '#ff5a1a' : '#ffb040'; x.fillRect(cx, cy, 4, 4); cx += rnd(-4, 8); cy += rnd(-4, 8); }
+    }
   }
   return c;
 }
-function makeWallFace(TER) {
-  const h = 30, c = newCanvas(TILE, h), x = c.getContext('2d');
+const WALLH = 30;
+function makeWallFace(b, TER, v) {
+  const h = WALLH, c = newCanvas(TILE, h), x = c.getContext('2d');
   x.fillStyle = TER.face[0]; x.fillRect(0, 0, TILE, h);
-  x.fillStyle = TER.face[1];
-  for (let row = 0; row < 3; row++) for (let col = 0; col < 5; col++) x.fillRect(col * 16 + (row % 2) * 8, row * 10 + 9, 14, 1);
-  for (let i = 0; i < 30; i++) x.fillRect(Math.floor(Math.random() * 20) * 4, Math.floor(Math.random() * 7) * 4, 4, 2);
+  if (b === 0) {            // raíces y troncos
+    x.fillStyle = '#2a1c12';
+    for (let k = 0; k < 4; k++) { const rx = 6 + k * 20 + Math.random() * 6; x.fillRect(rx, 0, 6, h - 4); x.fillStyle = '#3a281a'; x.fillRect(rx + 1, 0, 2, h - 6); x.fillStyle = '#2a1c12'; }
+    x.fillStyle = '#1f3c1a'; for (let k = 0; k < 10; k++) x.fillRect(Math.random() * 76, Math.random() * 8, 4, 4);
+  } else if (b === 1) {     // sillería
+    x.fillStyle = TER.face[1];
+    for (let row = 0; row < 3; row++) for (let col = 0; col < 5; col++) x.fillRect(col * 16 + (row % 2) * 8, row * 10 + 9, 14, 1);
+    if (v === 0) { x.fillStyle = '#5a3a20'; x.fillRect(36, 8, 8, 14); x.fillStyle = '#ffb040'; x.fillRect(37, 3, 6, 6); }   // antorcha
+  } else {                  // basalto con goteo de lava
+    x.fillStyle = TER.face[1];
+    for (let k = 0; k < 6; k++) x.fillRect(k * 14 + Math.random() * 4, 0, 2, h);
+    if (v !== 2) { x.fillStyle = '#ff5a1a'; const lx = 10 + Math.random() * 56; x.fillRect(lx, 0, 4, 10 + Math.random() * 12); x.fillStyle = '#ffd43b'; x.fillRect(lx + 1, 0, 2, 5); }
+  }
   x.fillStyle = 'rgba(0,0,0,0.35)'; x.fillRect(0, h - 6, TILE, 6);
   return c;
 }
@@ -277,7 +345,6 @@ function updateFlow() {
   MAP.fver++;
   reveal(tx, ty);
 }
-// dirección de navegación para un enemigo; devuelve false si debe ir directo
 const NAV = [0, 0];
 function navDir(e) {
   const n = MAPN, tx = Math.floor(e.x / TILE), ty = Math.floor(e.y / TILE);
@@ -307,15 +374,15 @@ function navDir(e) {
 
 // ---------------------------------------------------------------- niebla
 function reveal(tx, ty) {
-  const n = MAPN, R = 7.5, fog = MAP.fog, d = MAP.fogImg.data, TER = MAP.TER;
+  const n = MAPN, R = 7.5, fog = MAP.fog, d = MAP.fogImg.data;
   let changed = false;
   for (let y = Math.floor(ty - R); y <= ty + R; y++) for (let x = Math.floor(tx - R); x <= tx + R; x++) {
     if (x < 0 || y < 0 || x >= n || y >= n) continue;
     const i = y * n + x;
     if (fog[i] || (x - tx) ** 2 + (y - ty) ** 2 > R * R) continue;
     fog[i] = 1; changed = true;
-    const tt = MAP.t[i];
-    const col = tt === TW ? TER.top[1] : tt === TSLOW ? TER.slow[1] : tt === THURT ? TER.hurt[1] : tt === TICE ? '#bfe8ff' : tt === TSLOPE ? '#7a7a6a' : S.L.ground[0];
+    const tt = MAP.t[i], TER = TERRAIN[BIOME_KEYS[MAP.bio[i]]];
+    const col = tt === TW ? TER.top[1] : tt === TSLOW ? TER.slow[1] : tt === THURT ? TER.hurt[1] : tt === TICE ? '#bfe8ff' : tt === TSLOPE ? '#7a7a6a' : LEVELS[MAP.bio[i]].ground[0];
     const [r, g, b] = hexRGB(col);
     const lift = tt === TW ? 0.7 : 1.6;
     d[i * 4] = Math.min(255, r * lift); d[i * 4 + 1] = Math.min(255, g * lift); d[i * 4 + 2] = Math.min(255, b * lift); d[i * 4 + 3] = 255;
@@ -326,11 +393,9 @@ function reveal(tx, ty) {
 // ---------------------------------------------------------------- lógica por fotograma
 function updateWorld(dt) {
   updateFlow();
-  // zonas especiales
   P.inZone = null;
   for (const z of MAP.zones) if ((P.x - z.x) ** 2 + (P.y - z.y) ** 2 < z.r * z.r) { P.inZone = z.type; z.seen = true; }
   if (P.inZone === 'sagrada') heal(P.s.maxHp * 0.02 * dt);
-  // guardianes de santuario
   for (const sh of MAP.shrines) {
     if (sh.used || !sh.guard) continue;
     if (!sh.g && (P.x - sh.x) ** 2 + (P.y - sh.y) ** 2 < 430 * 430) spawnGuardian(sh);
@@ -340,7 +405,6 @@ function updateWorld(dt) {
       ring(sh.x, sh.y, 10, 200, 0.5, '#5bff8a', 6);
     }
   }
-  // trampas
   const lvlMul = 1 + S.lvlIdx * 0.7;
   for (const tr of MAP.traps) {
     const ph = (S.time + tr.off) % TRAP_PERIOD, cyc = Math.floor((S.time + tr.off) / TRAP_PERIOD);
@@ -366,7 +430,8 @@ function updateWorld(dt) {
 }
 
 function spawnGuardian(sh) {
-  const heavy = S.L.spawns.map(s => s.e).filter(t => !['imp', 'bat', 'icebat', 'slime'].includes(t));
+  const spawns = MAP.endless ? LEVELS[MAP.bio[tIdx(sh.x, sh.y)]].spawns : S.L.spawns;
+  const heavy = spawns.map(s => s.e).filter(t => !['imp', 'bat', 'icebat', 'slime'].includes(t));
   const p = randomFloorAround(sh.x, sh.y, 60, 150) || { x: sh.x, y: sh.y + 90 };
   const e = spawnEnemy(pick(heavy.length ? heavy : ['skel']), p.x, p.y, true);
   e.guardian = true; e.maxHp *= 2; e.hp = e.maxHp; e.sc *= 1.15; e.r *= 1.12; e.gT = 2.5;
@@ -375,7 +440,6 @@ function spawnGuardian(sh) {
   ring(e.x, e.y, 10, 160, 0.5, '#ffb020', 6);
   AU.sfx('boss');
 }
-// ataque especial de los guardianes (lo llama updateEnemies)
 function guardianTick(e, dt) {
   e.gT -= dt;
   if (e.gT > 0) return;
@@ -387,13 +451,29 @@ function guardianTick(e, dt) {
 }
 
 // ---------------------------------------------------------------- render
+const visTiles = (x0, y0, x1, y1, pad) => [
+  Math.max(0, Math.floor(x0 / TILE)), Math.min(MAPN - 1, Math.floor(x1 / TILE)),
+  Math.max(0, Math.floor((y0 - (pad || 0)) / TILE)), Math.min(MAPN - 1, Math.floor((y1 + (pad || 0)) / TILE)),
+];
+// suelo: en campaña un solo patrón; en el modo infinito, el patrón del bioma de cada baldosa
+function drawGround(x0, y0, x1, y1) {
+  if (!MAP.endless) {
+    ctx.fillStyle = S.groundPats[MAP.bio[0]];
+    ctx.fillRect(Math.max(0, x0), Math.max(0, y0), Math.min(WORLD, x1) - Math.max(0, x0), Math.min(WORLD, y1) - Math.max(0, y0));
+    return;
+  }
+  const [tx0, tx1, ty0, ty1] = visTiles(x0, y0, x1, y1), n = MAPN;
+  for (let b = 0; b < 3; b++) {
+    ctx.fillStyle = S.groundPats[b];
+    for (let ty = ty0; ty <= ty1; ty++) for (let tx = tx0; tx <= tx1; tx++) if (MAP.bio[ty * n + tx] === b) ctx.fillRect(tx * TILE, ty * TILE, TILE + 0.5, TILE + 0.5);
+  }
+}
 function drawTerrain(x0, y0, x1, y1) {
-  const n = MAPN, TER = MAP.TER, tm = S.time;
-  const tx0 = Math.max(0, Math.floor(x0 / TILE)), tx1 = Math.min(n - 1, Math.floor(x1 / TILE));
-  const ty0 = Math.max(0, Math.floor(y0 / TILE)), ty1 = Math.min(n - 1, Math.floor(y1 / TILE));
+  const n = MAPN, tm = S.time;
+  const [tx0, tx1, ty0, ty1] = visTiles(x0, y0, x1, y1);
   for (let ty = ty0; ty <= ty1; ty++) for (let tx = tx0; tx <= tx1; tx++) {
-    const tt = MAP.t[ty * n + tx]; if (tt === TF || tt === TW) continue;
-    const x = tx * TILE, y = ty * TILE;
+    const i = ty * n + tx, tt = MAP.t[i]; if (tt === TF || tt === TW) continue;
+    const TER = TERRAIN[BIOME_KEYS[MAP.bio[i]]], x = tx * TILE, y = ty * TILE;
     if (tt === TSLOW) {
       ctx.fillStyle = rgba(TER.slow[1], 0.55); ctx.fillRect(x, y, TILE, TILE);
       ctx.fillStyle = rgba(TER.slow[1], 0.9);
@@ -407,7 +487,7 @@ function drawTerrain(x0, y0, x1, y1) {
       ctx.fillStyle = 'rgba(190,232,255,0.45)'; ctx.fillRect(x, y, TILE, TILE);
       ctx.fillStyle = 'rgba(255,255,255,0.35)'; ctx.fillRect(x + 10 + (tx * 13) % 30, y + 14, 22, 3); ctx.fillRect(x + 30, y + 50 + (ty * 7) % 16, 30, 3);
     } else if (tt === TSLOPE) {
-      const a = MAP.dir[ty * n + tx];
+      const a = MAP.dir[i];
       ctx.fillStyle = 'rgba(0,0,0,0.18)'; ctx.fillRect(x, y, TILE, TILE);
       ctx.save(); ctx.translate(x + TILE / 2, y + TILE / 2); ctx.rotate(a);
       const o = (tm * 40) % 26;
@@ -416,26 +496,44 @@ function drawTerrain(x0, y0, x1, y1) {
       ctx.restore();
     }
   }
+  // sombra que proyectan los muros sobre el suelo (da profundidad)
+  ctx.fillStyle = 'rgba(0,0,0,0.28)';
+  for (let ty = ty0; ty <= ty1; ty++) for (let tx = tx0; tx <= tx1; tx++) {
+    if (MAP.t[ty * n + tx] !== TW || ty + 1 >= n || MAP.t[(ty + 1) * n + tx] === TW) continue;
+    ctx.fillRect(tx * TILE, (ty + 1) * TILE, TILE, 14);
+  }
 }
 function pushWalls(list, x0, y0, x1, y1) {
-  const n = MAPN;
-  const tx0 = Math.max(0, Math.floor(x0 / TILE)), tx1 = Math.min(n - 1, Math.floor(x1 / TILE));
-  const ty0 = Math.max(0, Math.floor(y0 / TILE)), ty1 = Math.min(n - 1, Math.floor((y1 + 40) / TILE));
+  const n = MAPN, [tx0, tx1, ty0, ty1] = visTiles(x0, y0, x1, y1 + 40);
   for (let ty = ty0; ty <= ty1; ty++) for (let tx = tx0; tx <= tx1; tx++)
     if (MAP.t[ty * n + tx] === TW) list.push({ kind: 'wall', tx, ty, y: (ty + 1) * TILE - 1 });
 }
-const WALLH = 30;
 function drawWall(o) {
-  const n = MAPN, x = o.tx * TILE, y = o.ty * TILE, t = MAP.t;
-  const below = o.ty + 1 >= n || t[(o.ty + 1) * n + o.tx] === TW;
-  ctx.drawImage(MAP.wallTop, x, y - WALLH);
-  if (!below) ctx.drawImage(MAP.wallFace, x, y + TILE - WALLH);
-  // bordes del techo donde no hay muro vecino
-  ctx.fillStyle = 'rgba(255,255,255,0.10)';
-  if (o.ty > 0 && t[(o.ty - 1) * n + o.tx] !== TW) ctx.fillRect(x, y - WALLH, TILE, 4);
-  ctx.fillStyle = 'rgba(0,0,0,0.25)';
-  if (o.tx > 0 && t[o.ty * n + o.tx - 1] !== TW) ctx.fillRect(x, y - WALLH, 4, TILE);
-  if (o.tx < n - 1 && t[o.ty * n + o.tx + 1] !== TW) ctx.fillRect(x + TILE - 4, y - WALLH, 4, TILE);
+  const n = MAPN, tx = o.tx, ty = o.ty, x = tx * TILE, y = ty * TILE, t = MAP.t, i = ty * n + tx;
+  const b = MAP.bio[i], tex = wallTex(b), h = hash2(tx, ty), TER = TERRAIN[BIOME_KEYS[b]];
+  const W_ = (xx, yy) => xx < 0 || yy < 0 || xx >= n || yy >= n || t[yy * n + xx] === TW;
+  const up = W_(tx, ty - 1), dn = W_(tx, ty + 1), lf = W_(tx - 1, ty), rt = W_(tx + 1, ty);
+  const top = y - WALLH;
+  ctx.drawImage(tex.tops[h % 4], x, top);
+  if (!dn) {
+    const fv = (h >>> 3) % 3;
+    ctx.drawImage(tex.faces[fv], x, y + TILE - WALLH);
+    if (b === 1 && fv === 0) ctx.drawImage(glowSpr('#ffb040'), x + 22, y + TILE - WALLH - 18, 36, 36);   // antorcha encendida
+    if (b === 2 && fv !== 2) ctx.drawImage(glowSpr('#ff5a1a'), x + 10, y + TILE - WALLH - 6, 60, 30);
+  }
+  // bordes: brillo arriba, sombra a los lados expuestos
+  if (!up) { ctx.fillStyle = TER.rim; ctx.globalAlpha = 0.55; ctx.fillRect(x, top, TILE, 3); ctx.globalAlpha = 1; }
+  ctx.fillStyle = 'rgba(0,0,0,0.35)';
+  if (!lf) ctx.fillRect(x, top, 4, TILE);
+  if (!rt) ctx.fillRect(x + TILE - 4, top, 4, TILE);
+  // esquinas redondeadas (escalones de píxel) donde el muro termina
+  const pat = S.groundPats[b];
+  const stair = (cx, cy, sx, sy) => {
+    ctx.fillStyle = pat;
+    ctx.fillRect(cx, cy, 12 * sx, 4 * sy); ctx.fillRect(cx, cy, 8 * sx, 8 * sy); ctx.fillRect(cx, cy, 4 * sx, 12 * sy);
+  };
+  if (!up && !lf) stair(x, top, 1, 1);
+  if (!up && !rt) stair(x + TILE, top, -1, 1);
 }
 function drawTrapsZones(vis) {
   for (const z of MAP.zones) {
@@ -454,7 +552,7 @@ function drawTrapsZones(vis) {
     ctx.fillStyle = tr.state === 1 ? '#6a2020' : '#3a3346'; ctx.fillRect(x - 23, y - 23, 46, 46);
     ctx.fillStyle = '#120c18';
     for (let k = 0; k < 9; k++) ctx.fillRect(x - 17 + (k % 3) * 14, y - 17 + Math.floor(k / 3) * 14, 6, 6);
-    if (tr.state === 1) { ctx.drawImage(glowSpr('#ff3a2a'), x - 30, y - 30, 60, 60); }
+    if (tr.state === 1) ctx.drawImage(glowSpr('#ff3a2a'), x - 30, y - 30, 60, 60);
     if (tr.state === 2) {
       if (tr.kind === 'spikes') {
         ctx.fillStyle = '#e8e0d0';
@@ -471,19 +569,17 @@ function drawTrapsZones(vis) {
   }
 }
 function drawFog(x0, y0, x1, y1) {
-  const n = MAPN, fog = MAP.fog;
-  const tx0 = Math.max(0, Math.floor(x0 / TILE)), tx1 = Math.min(n - 1, Math.floor(x1 / TILE));
-  const ty0 = Math.max(0, Math.floor((y0 - 40) / TILE)), ty1 = Math.min(n - 1, Math.floor((y1 + 40) / TILE));
-  ctx.fillStyle = MAP.TER.fogc;
+  const n = MAPN, fog = MAP.fog, [tx0, tx1, ty0, ty1] = visTiles(x0, y0, x1, y1, 40);
   for (let ty = ty0; ty <= ty1; ty++) for (let tx = tx0; tx <= tx1; tx++) {
-    if (fog[ty * n + tx]) continue;
+    const i = ty * n + tx;
+    if (fog[i]) continue;
+    ctx.fillStyle = TERRAIN[BIOME_KEYS[MAP.bio[i]]].fogc;
     ctx.fillRect(tx * TILE - 1, ty * TILE - WALLH - 1, TILE + 2, TILE + 2);
   }
 }
-// texto de ayuda sobre el terreno que pisa el jugador
 function terrainHint() {
   if (!MAP) return null;
-  const tt = tileAt(P.x, P.y), TER = MAP.TER;
+  const tt = tileAt(P.x, P.y), TER = terAt(P.x, P.y);
   if (P.inZone) return [ZONES[P.inZone].n + ': ' + ZONES[P.inZone].d, ZONES[P.inZone].c];
   if (tt === TSLOW) return [TER.slow[0] + ': -45% velocidad', '#d8d0b0'];
   if (tt === THURT) return [TER.hurt[0] + ': daño continuo (también a enemigos)', TER.hurt[1]];

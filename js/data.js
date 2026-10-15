@@ -5,7 +5,7 @@
 //  balancear sin tocar el motor.
 // =====================================================================
 
-const WORLD = 80 * 64;       // tamaño del mapa (baldosa 80px × 64), generado proceduralmente
+let WORLD = 80 * 64;         // tamaño del mapa en px (lo ajusta genMap: 64 baldosas en campaña, 110 en hordas infinitas)
 const LEVEL_TIME = 150;      // segundos de oleadas antes del jefe
 
 const pct = v => Math.round(v * 100) + '%';
@@ -14,8 +14,8 @@ const num = v => (Math.round(v * 10) / 10).toString();
 const RAR = [
   { n: 'Común', c: '#c8c8d0', m: 1 },
   { n: 'Raro', c: '#4aa3ff', m: 1.5 },
-  { n: 'Épico', c: '#b066ff', m: 2.2 },
-  { n: 'Legendario', c: '#ffb020', m: 3.2 },
+  { n: 'Épico', c: '#b066ff', m: 1.9 },
+  { n: 'Legendario', c: '#ffb020', m: 2.6 },
 ];
 
 // Escuelas: acumular puntos (3/6/9) desbloquea bonos de hiperespecialización.
@@ -28,6 +28,14 @@ const SCHOOLS = {
   arcano:   { n: 'Arcano',   ic: '🔮', c: '#6aa8ff', tiers: ['+1 proyectil', '-20% enfriamientos', 'Proyectiles teledirigidos que rebotan'] },
 };
 const SCHOOL_KEYS = Object.keys(SCHOOLS);
+
+// Dificultad: multiplica experiencia, vida/daño/aparición de enemigos y la Esencia ganada.
+const DIFFS = {
+  facil:     { n: 'Fácil',     ic: '🌱', d: '+25% exp · enemigos más débiles', xp: 1.25, hp: 0.75, dmg: 0.7, spawn: 0.85, ess: 0.7 },
+  normal:    { n: 'Normal',    ic: '⚔️', d: 'La experiencia pensada',          xp: 1,    hp: 1,    dmg: 1,   spawn: 1,    ess: 1 },
+  dificil:   { n: 'Difícil',   ic: '🔥', d: '-15% exp · enemigos más duros',   xp: 0.85, hp: 1.35, dmg: 1.3, spawn: 1.15, ess: 1.4 },
+  pesadilla: { n: 'Pesadilla', ic: '💀', d: '-25% exp · solo builds rotas',     xp: 0.75, hp: 1.8,  dmg: 1.6, spawn: 1.3,  ess: 2 },
+};
 
 const CLASSES = {
   guerrero: {

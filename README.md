@@ -19,7 +19,8 @@ El juego detecta si el dispositivo es táctil y activa los controles en pantalla
 
 - **Pulgar izquierdo** (en cualquier punto de la mitad izquierda): stick para moverte.
 - **Pulgar derecho**: stick para apuntar y disparar. Si no lo usas, el héroe apunta y dispara solo al enemigo más cercano.
-- **Botones**: 💨 dash, ✴️ habilidad, ⭐ definitiva, 📜 build y ⏸ pausa.
+- **Botones**: 💨 dash, ✴️ habilidad, ⭐ definitiva, 📜 build, ⏸ pausa y ⛶ pantalla completa (aparece si se sale de ella).
+- Los menús se reacomodan en pantallas bajas: el menú principal va en dos columnas, las cartas en una sola fila y la encrucijada con la tienda y los caminos lado a lado. Además ignoran los toques accidentales del primer medio segundo.
 
 Se juega **en horizontal**: si el teléfono está en vertical aparece un aviso para girarlo y el juego se pausa. En Android, el botón *Pantalla completa* también fija la orientación. En móviles arranca en calidad baja para cuidar la batería y los FPS; se puede cambiar en *Opciones*.
 
@@ -39,6 +40,13 @@ Se juega **en horizontal**: si el teléfono está en vertical aparece un aviso p
 
 Elijo un héroe, bajo al Abismo y sobrevivo dos minutos y medio a oleadas que no paran de crecer. Luego aparece el jefe del nivel. Si lo derroto, abro su cofre, cruzo el portal y elijo qué camino tomar hacia el siguiente nivel. Son tres niveles, y cada partida empieza desde cero.
 
+### Modos y dificultad
+
+- **⚔ Campaña:** los 3 niveles con su jefe.
+- **∞ Hordas infinitas:** un solo mapa gigante (unas 3 veces más grande) que mezcla bosque, cripta y forja. Los enemigos cambian según el bioma que pisas y la **amenaza** sube cada 30 segundos sin parar. Cada 3 minutos llega un jefe; al derrotarlo, su portal lleva al Altar de Almas. El reto es ver cuánto aguantas.
+- **Dificultad:** 🌱 Fácil, ⚔️ Normal, 🔥 Difícil o 💀 Pesadilla. Cambia la experiencia y la vida, el daño y la cantidad de enemigos. Las más difíciles dan más Esencia.
+- **Ira del Abismo:** si arrasas sin recibir daño, el Abismo se enfada y manda más enemigos y más resistentes (sin dar más experiencia). Si vas mal, se calma. Así el reto se mantiene sin volverse imposible.
+
 ### Los héroes
 
 | Héroe | Estilo | Ataques a elegir | Habilidades a elegir |
@@ -57,7 +65,8 @@ Lo que más me importaba era que hubiera **muchas formas de romper el juego**:
 - **15 sinergias híbridas**: con 3 puntos en dos escuelas distintas se activa un efecto combinado. Por ejemplo, Fuego + Hielo es *Choque Térmico* y Tormenta + Sombra es *Paso Fantasma*. Así mezclar también vale la pena.
 - **28 mejoras en 4 rarezas** (Común, Raro, Épico, Legendario). La rareza multiplica el efecto.
 - **6 armas automáticas** (máximo 4 a la vez). Un arma a nivel 5 con 6 puntos en su escuela **evoluciona**: *Sol Negro*, *Ventisca Eterna*, *Juicio del Cielo*, *Mil Filos*, *Legión Carmesí* y *Cataclismo*.
-- **Racha de combate**: cada baja seguida da más experiencia, con premios en x25, x50, x100… Se corta si paso 2.5 segundos sin matar.
+- **Racha de combate**: cada baja seguida da hasta +25% de experiencia, con premios en x25, x50, x100… Se corta si paso 2.5 segundos sin matar.
+- **Las gemas de experiencia se desvanecen** si no las recoges en 40 segundos: hay que moverse.
 - **Altar de Almas**: entre niveles gasto las almas de esa partida en fuerza, vida, elixires, re-tiradas o una pluma de fénix.
 - **Encrucijada**: elijo 1 de 3 caminos, algunos seguros y otros malditos con mejor recompensa.
 

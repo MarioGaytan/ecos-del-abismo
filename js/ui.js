@@ -9,7 +9,9 @@ const show = id => $(id).classList.remove('hidden');
 const hide = id => $(id).classList.add('hidden');
 
 const UI = {
-  cls: 'guerrero', start: 0, queue: [], choices: [], lvKind: 'level', paths: [],
+  cls: 'guerrero', start: 0, endless: false, queue: [], choices: [], lvKind: 'level', paths: [], openedAt: 0,
+  // evita elegir una carta por accidente con un toque que venía del juego
+  guard() { return performance.now() - this.openedAt < 450; },
 
   // ------------------------------------------------ MENÚ
   buildMenu() {
@@ -30,6 +32,25 @@ const UI = {
       d.querySelector('.custBtn').onclick = ev => { ev.stopPropagation(); this.cls = id; AU.init(); this.openCustom(); };
       box.appendChild(d);
     }
+    this.endless = !!SAVE.settings.endless;
+    const md = $('modes'); md.innerHTML = '';
+    [[false, '⚔ Campaña', '3 niveles con jefe'], [true, '∞ Hordas infinitas', 'Mapa gigante mixto']].forEach(([v, n, sub]) => {
+      const b = document.createElement('button');
+      b.className = 'lv' + (this.endless === v ? ' sel' : '');
+      b.innerHTML = `${n}<small>${sub}</small>`;
+      b.onclick = () => { SAVE.settings.endless = v; persist(); AU.init(); AU.sfx('ui'); this.buildMenu(); };
+      md.appendChild(b);
+    });
+    const df = $('diffs'); df.innerHTML = '';
+    const cur = SAVE.settings.diff || 'normal';
+    for (const [k, D] of Object.entries(DIFFS)) {
+      const b = document.createElement('button');
+      b.className = 'lv dif' + (cur === k ? ' sel' : '');
+      b.innerHTML = `${D.ic} ${D.n}<small>${D.d}</small>`;
+      b.onclick = () => { SAVE.settings.diff = k; persist(); AU.init(); AU.sfx('ui'); this.buildMenu(); };
+      df.appendChild(b);
+    }
+    $('lvLabel').style.display = $('levels').style.display = this.endless ? 'none' : '';
     const lv = $('levels'); lv.innerHTML = '';
     LEVELS.forEach((L, i) => {
       const b = document.createElement('button');
@@ -39,7 +60,8 @@ const UI = {
       lv.appendChild(b);
     });
     $('souls').textContent = Math.floor(SAVE.souls);
-    $('record').textContent = `Récord de bajas: ${SAVE.best || 0} · Victorias: ${SAVE.wins || 0}`;
+    const be = SAVE.bestEndless || 0;
+    $('record').textContent = `Récord de bajas: ${SAVE.best || 0} · Victorias: ${SAVE.wins || 0} · Mejor tiempo infinito: ${Math.floor(be / 60)}:${String(be % 60).padStart(2, '0')}`;
   },
   openMenu() {
     mode = 'menu'; S = null;
@@ -51,7 +73,7 @@ const UI = {
     AU.init(); AU.sfx('ui');
     goFullscreenLandscape();
     hide('menu');
-    startRun(this.cls, this.start);
+    startRun(this.cls, this.start, this.endless);
   },
 
   // ------------------------------------------------ PERSONALIZACIÓN (cosmética + habilidades iniciales)
@@ -134,6 +156,7 @@ const UI = {
     $('lvTitle').textContent = kind === 'boss' ? '👑 Cofre del Jefe' : kind === 'chest' ? '🎁 ¡Cofre!' : '⬆ ¡Nivel ' + (P.lvl - S.pendingLv) + '!';
     $('lvSub').textContent = kind === 'level' ? 'Elige una mejora. Especialízate: 3/6/9 puntos en una escuela desbloquean poderes.' : 'Recompensa de rareza superior';
     show('levelup');
+    this.openedAt = performance.now();
     AU.sfx(kind === 'level' ? 'level' : 'chest');
   },
   roll() {
@@ -155,6 +178,7 @@ const UI = {
   reroll() { if (P.rerolls <= 0) return; P.rerolls--; AU.sfx('ui'); this.roll(); },
   skip() { heal(P.s.maxHp * 0.15); S.souls += 3; this.closeLevelUp(); },
   choose(i) {
+    if (this.guard()) return;
     const c = this.choices[i]; if (!c) return;
     applyChoice(c);
     AU.sfx('pick');
@@ -173,7 +197,8 @@ const UI = {
     const pool = PATHS.slice().sort(() => Math.random() - 0.5).slice(0, 3);
     this.paths = pool;
     const next = LEVELS[S.lvlIdx + 1];
-    $('crossSub').textContent = `Siguiente: ${next.sub} — ${next.n}. Gasta tus almas y elige tu camino.`;
+    $('crossSub').textContent = S.endless ? 'El Abismo no termina. Gasta tus almas y elige una bendición.' : `Siguiente: ${next.sub} — ${next.n}. Gasta tus almas y elige tu camino.`;
+    this.openedAt = performance.now();
     this.buildShop();
     const box = $('paths'); box.innerHTML = '';
     pool.forEach((p, i) => {
@@ -202,6 +227,7 @@ const UI = {
     }
   },
   pickPath(i) {
+    if (this.guard()) return;
     const p = this.paths[i]; if (!p) return;
     hide('cross'); AU.sfx('portal');
     applyPath(p.id);
@@ -222,11 +248,12 @@ const UI = {
   hideStats() { if (mode !== 'pause') hide('stats'); },
   showOver(win, earned) {
     hide('stats');
-    $('overTitle').textContent = win ? '🏆 ¡VICTORIA!' : '💀 HAS CAÍDO';
+    $('overTitle').textContent = win ? '🏆 ¡VICTORIA!' : S.endless ? '∞ FIN DE LAS HORDAS' : '💀 HAS CAÍDO';
     $('overTitle').style.color = win ? '#ffd43b' : '#ff5a5a';
     const t = S.runTime;
     $('overBody').innerHTML = `<div class="ostats">
-      <div><b>${S.L.n}</b><small>Llegaste a</small></div>
+      <div><b>${S.endless ? 'Amenaza ' + S.threat : S.L.n}</b><small>${S.endless ? 'Hordas infinitas' : 'Llegaste a'}</small></div>
+      <div><b>${S.diff.ic} ${S.diff.n}</b><small>Dificultad</small></div>
       <div><b>${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}</b><small>Tiempo</small></div>
       <div><b>${P.lvl}</b><small>Nivel</small></div>
       <div><b>${S.kills}</b><small>Bajas</small></div>
@@ -247,7 +274,7 @@ const UI = {
     } else if (mode === 'pause') {
       if (c === 'Escape' || c === 'KeyP') this.resume();
     } else if (mode === 'over') {
-      if (c === 'Enter') { hide('over'); startRun(this.cls, this.start); }
+      if (c === 'Enter') { hide('over'); startRun(this.cls, this.start, this.endless); }
       if (c === 'Escape') this.openMenu();
     } else if (mode === 'menu') {
       if (c === 'Enter' && $('custom').classList.contains('hidden') && $('opts').classList.contains('hidden')) this.play();
@@ -400,7 +427,7 @@ window.addEventListener('load', () => {
   $('optsBtn').onclick = () => { AU.init(); UI.openOpts(); };
   $('helpBtn').onclick = () => show('help');
   $('stats').onclick = () => { keys.Tab = false; hide('stats'); };   // en móvil se cierra tocándola
-  $('fsBtn').onclick = () => goFullscreenLandscape();
+  $('fsBtn').onclick = () => goFullscreenLandscape(true);
   if (TOUCH.on) document.body.classList.add('touch');
   document.querySelectorAll('[data-close]').forEach(b => b.onclick = () => hide(b.dataset.close));
   $('rerollBtn').onclick = () => UI.reroll();
@@ -408,7 +435,8 @@ window.addEventListener('load', () => {
   $('resumeBtn').onclick = () => UI.resume();
   $('pOptsBtn').onclick = () => UI.openOpts();
   $('abandonBtn').onclick = () => UI.abandon();
-  $('retryBtn').onclick = () => { hide('over'); startRun(UI.cls, UI.start); };
+  $('retryBtn').onclick = () => { hide('over'); startRun(UI.cls, UI.start, UI.endless); };
+  $('pFsBtn').onclick = () => goFullscreenLandscape(true);
   $('menuBtn').onclick = () => UI.openMenu();
   UI.openMenu();
 });

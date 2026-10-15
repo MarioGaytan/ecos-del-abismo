@@ -31,6 +31,7 @@ function touchLayout() {
     pause: { x: W - sf.r - 26, y: sf.t + 26, r: 20, ic: '⏸' },
     build: { x: W - sf.r - 26, y: sf.t + 74, r: 20, ic: '📜' },
   };
+  if (!isFullscreen() && fsAvailable()) TOUCH.btns.fs = { x: W - sf.r - 26, y: sf.t + 122, r: 20, ic: '⛶' };
 }
 
 function touchButtonAt(x, y) {
@@ -43,6 +44,7 @@ function touchAction(k) {
   else if (k === 'ult') tryUlt();
   else if (k === 'pause') UI.pause();
   else if (k === 'build') { keys.Tab = true; UI.showStats(); }   // se cierra tocando la ventana
+  else if (k === 'fs') goFullscreenLandscape(true);
 }
 
 function onTouchStart(e) {
@@ -143,6 +145,7 @@ function touchDraw() {
   btn(B.sec, P.secT <= 0 ? 1 : 1 - P.secT / (P.C.sec.cd * (1 - s.cdr)), P.secT <= 0, P.C.sec.n.toUpperCase());
   btn(B.ult, P.ultT > 0 ? 1 : P.ult / 100, P.ult >= 100 && P.ultT <= 0, 'DEFINITIVA');
   btn(B.pause, 1, false); btn(B.build, 1, false);
+  if (B.fs) btn(B.fs, 1, false);
 }
 
 // Orientación: en vertical se pausa y se muestra el aviso (CSS). En Android se intenta bloquear horizontal.
@@ -151,11 +154,13 @@ function checkOrientation() {
 }
 window.addEventListener('resize', checkOrientation);
 document.addEventListener('visibilitychange', () => { if (document.hidden && mode === 'play') UI.pause(); });
-function goFullscreenLandscape() {
-  if (!TOUCH.on) return;
+const isFullscreen = () => !!(document.fullscreenElement || document.webkitFullscreenElement);
+const fsAvailable = () => !!(document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen);
+function goFullscreenLandscape(force) {
+  if (!TOUCH.on && !force) return;
   const el = document.documentElement;
   const req = el.requestFullscreen || el.webkitRequestFullscreen;
-  if (!req || document.fullscreenElement) return;
+  if (!req || isFullscreen()) return;
   try {
     const p = req.call(el, { navigationUI: 'hide' });
     if (p && p.then) p.then(() => screen.orientation && screen.orientation.lock && screen.orientation.lock('landscape').catch(() => { })).catch(() => { });

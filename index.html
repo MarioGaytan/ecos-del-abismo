@@ -51,6 +51,12 @@
   .lv { display: flex; flex-direction: column; align-items: center; min-width: 190px; }
   .lv small { font-family: 'Segoe UI', sans-serif; font-size: 11px; color: var(--dim); margin-top: 3px; }
   .lv.sel { border-color: var(--gold); background: #3a2a10; }
+  .menuGrid { display: flex; flex-direction: column; align-items: center; }
+  .mcol { display: flex; flex-direction: column; align-items: center; }
+  .seg { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+  .seg .lv { min-width: 150px; }
+  .dif { min-width: 120px !important; }
+  .crossBody, .ccol { display: flex; flex-direction: column; align-items: center; }
   .souls { color: #d0a0ff; font-family: 'Silkscreen', monospace; }
   .keys { font-size: 12px; color: var(--dim); margin-top: 10px; text-align: center; }
   kbd { font-family: 'Silkscreen', monospace; background: #2a1d3d; border: 1px solid var(--line); border-bottom-width: 3px; border-radius: 4px; padding: 1px 6px; font-size: 12px; color: #fff; }
@@ -125,6 +131,50 @@
     .ostats div { min-width: 84px; padding: 4px 8px; } .ostats b { font-size: 15px; }
     .panel { padding: 12px 14px; }
   }
+  @media (max-height: 520px) {
+    /* menú en dos columnas: héroes a la izquierda, opciones y jugar a la derecha */
+    #menu > .sub { display: none; }
+    #menu h1 { font-size: 24px; letter-spacing: 2px; }
+    .menuGrid { flex-direction: row; align-items: flex-start; gap: 14px; justify-content: center; width: 100%; }
+    .mcol .label { margin: 4px 0 3px; }
+    #classes { flex-direction: column; gap: 6px; }
+    .cls { width: 250px; display: grid; grid-template-columns: 56px 1fr; grid-template-rows: auto auto; column-gap: 8px; text-align: left; padding: 6px 8px; }
+    .cls canvas { width: 56px; height: 56px; grid-row: 1 / span 2; }
+    .cls h3 { margin: 0; font-size: 13px; }
+    .cls ul { display: flex; flex-wrap: wrap; gap: 0 6px; list-style: none; padding: 0; margin: 2px 0 0; font-size: 10.5px; }
+    .cls ul li b { display: none; }
+    .cls ul li:not(:last-child)::after { content: ' ·'; }
+    .cls .st, .cls .custBtn { display: none; }
+    .cls.sel .custBtn { display: inline-block; grid-column: 2; justify-self: start; margin-top: 4px; padding: 3px 8px; font-size: 10px; }
+    .seg { gap: 5px; max-width: 420px; }
+    .seg { flex-wrap: nowrap; }
+    .mcol:last-child { min-width: 0; max-width: 470px; flex: 1; }
+    .seg { width: 100%; }
+    .seg .lv { min-width: 0 !important; flex: 1 1 0; flex-direction: row; gap: 3px; justify-content: center; padding: 6px 3px; font-size: 9.5px; letter-spacing: 0; white-space: nowrap; overflow: hidden; }
+    .seg .lv small { display: none; }
+    #menu h1 { margin-top: 2px; }
+    #menu .keys { display: none; }
+    .mcol .row { margin: 6px 0; gap: 6px; }
+    .mcol .row button { padding: 6px 10px; font-size: 11px; }
+    /* subida de nivel: cartas en una sola fila, sin desplazarse */
+    #levelup h2, #cross h2 { font-size: 18px; margin: 0; }
+    #lvSub { display: none; }
+    #cards { flex-wrap: nowrap; gap: 8px; }
+    .card { width: 23vw; max-width: 190px; padding: 8px 8px 10px; }
+    .card .ic { font-size: 26px; margin: 2px 0; }
+    .card h3 { font-size: 12px; } .card p { font-size: 11.5px; } .card .sch { font-size: 10.5px; }
+    /* encrucijada: tienda a la izquierda, caminos a la derecha */
+    #crossSub { display: none; }
+    .crossBody { flex-direction: row; align-items: flex-start; gap: 12px; width: 100%; justify-content: center; }
+    #shop { display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px; max-width: 470px; }
+    .shopItem { width: auto; padding: 4px; gap: 1px; font-size: 10px; }
+    .shopItem .ic { font-size: 18px; } .shopItem small { font-size: 9.5px; }
+    #paths { flex-direction: column; gap: 6px; flex-wrap: nowrap; }
+    .card.path { width: 230px; max-width: none; display: grid; grid-template-columns: 34px 1fr; column-gap: 8px; text-align: left; padding: 6px 10px; }
+    .card.path .ic { grid-row: 1 / span 2; font-size: 26px; align-self: center; }
+    .card.path h3 { margin: 0; } .card.path p { margin: 2px 0 0; }
+    .card.path kbd { display: none; }
+  }
 </style>
 </head>
 <body>
@@ -141,18 +191,28 @@
 <div id="menu" class="ov">
   <h1>ECOS DEL ABISMO</h1>
   <div class="sub">Roguelite de acción. Sobrevive a hordas cada vez más frenéticas, combina escuelas de poder y destruye a los guardianes del Abismo.</div>
-  <div class="label">ELIGE TU HÉROE</div>
-  <div id="classes"></div>
-  <div class="label">NIVEL INICIAL</div>
-  <div id="levels"></div>
-  <div class="row" style="margin-top:16px">
-    <button id="playBtn" class="big">▶ JUGAR</button>
-  </div>
-  <div class="row">
-    <button id="altarBtn">🎨 Personalizar · Esencia <span id="souls" class="souls">0</span></button>
-    <button id="optsBtn">⚙ Opciones</button>
-    <button id="helpBtn">❔ Cómo jugar</button>
-    <button id="fsBtn" class="touchOnly">⛶ Pantalla completa</button>
+  <div class="menuGrid">
+    <div class="mcol">
+      <div class="label">ELIGE TU HÉROE</div>
+      <div id="classes"></div>
+    </div>
+    <div class="mcol">
+      <div class="label">MODO</div>
+      <div id="modes" class="seg"></div>
+      <div class="label" id="lvLabel">NIVEL INICIAL</div>
+      <div id="levels" class="seg"></div>
+      <div class="label">DIFICULTAD</div>
+      <div id="diffs" class="seg"></div>
+      <div class="row" style="margin-top:12px">
+        <button id="playBtn" class="big">▶ JUGAR</button>
+      </div>
+      <div class="row">
+        <button id="altarBtn">🎨 Personalizar · Esencia <span id="souls" class="souls">0</span></button>
+        <button id="optsBtn">⚙ Opciones</button>
+        <button id="helpBtn">❔ Cómo jugar</button>
+        <button id="fsBtn" class="touchOnly">⛶ Pantalla completa</button>
+      </div>
+    </div>
   </div>
   <div class="keys" id="record"></div>
   <div class="keys"><kbd>WASD</kbd> mover · <kbd>Ratón</kbd> apuntar · <kbd>Clic izq</kbd> atacar · <kbd>Clic der</kbd>/<kbd>E</kbd> habilidad · <kbd>Espacio</kbd> dash · <kbd>Q</kbd> definitiva · <kbd>Enter</kbd> jugar</div>
@@ -221,17 +281,23 @@
 <div id="cross" class="ov dim hidden">
   <h2>🌀 Encrucijada</h2>
   <div class="sub" id="crossSub"></div>
-  <div class="label">✦ ALTAR DE ALMAS — tienes <span id="shopSouls" class="souls">0</span> almas de esta partida</div>
-  <div id="shop"></div>
-  <div class="label">ELIGE TU CAMINO</div>
-  <div id="paths"></div>
+  <div class="crossBody">
+    <div class="ccol">
+      <div class="label">✦ ALTAR DE ALMAS — tienes <span id="shopSouls" class="souls">0</span> almas</div>
+      <div id="shop"></div>
+    </div>
+    <div class="ccol">
+      <div class="label">ELIGE TU CAMINO</div>
+      <div id="paths"></div>
+    </div>
+  </div>
 </div>
 
 <!-- PAUSA -->
 <div id="pause" class="ov dim hidden">
   <h2>⏸ Pausa</h2>
   <div class="row"><button id="resumeBtn" class="big">Continuar</button></div>
-  <div class="row"><button id="pOptsBtn">⚙ Opciones</button><button id="abandonBtn">Abandonar partida</button></div>
+  <div class="row"><button id="pOptsBtn">⚙ Opciones</button><button id="pFsBtn" class="touchOnly">⛶ Pantalla completa</button><button id="abandonBtn">Abandonar partida</button></div>
   <div class="keys">Mantén <kbd>Tab</kbd> durante el juego para ver tu build.</div>
 </div>
 
@@ -247,12 +313,12 @@
   <div class="row"><button id="retryBtn" class="big">↻ Reintentar [Enter]</button><button id="menuBtn">Menú [Esc]</button></div>
 </div>
 
-<script src="js/data.js"></script>
-<script src="js/sprites.js"></script>
-<script src="js/audio.js"></script>
-<script src="js/world.js"></script>
-<script src="js/game.js"></script>
-<script src="js/touch.js"></script>
-<script src="js/ui.js"></script>
+<script src="js/data.js?v=6"></script>
+<script src="js/sprites.js?v=6"></script>
+<script src="js/audio.js?v=6"></script>
+<script src="js/world.js?v=6"></script>
+<script src="js/game.js?v=6"></script>
+<script src="js/touch.js?v=6"></script>
+<script src="js/ui.js?v=6"></script>
 </body>
 </html>
