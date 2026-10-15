@@ -1,0 +1,55 @@
+# =====================================================================
+#  .gitignore — juego HTML5 estático (sin build), editado con VS Code
+#  en Windows 11. Todo lo que el juego necesita está en index.html y js/.
+# =====================================================================
+
+# ---------- Windows ----------
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+desktop.ini
+$RECYCLE.BIN/
+*.lnk
+*.stackdump
+
+# ---------- VS Code ----------
+# Se ignora la config personal, pero se comparten las recomendaciones útiles
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+*.code-workspace
+.history/
+
+# ---------- Claude Code ----------
+# launch.json (servidor local de pruebas) sí se comparte; los permisos locales no
+.claude/settings.local.json
+
+# ---------- Builds para publicar ----------
+# Los .zip para itch.io se generan desde el código; no se versionan
+dist/
+build/
+*.zip
+*.7z
+
+# ---------- Herramientas opcionales (Node / Python) ----------
+node_modules/
+npm-debug.log*
+__pycache__/
+*.py[cod]
+.venv/
+
+# ---------- Varios ----------
+*.log
+*.tmp
+*.bak
+*.swp
+~$*
+.env
+.env.*
+
+# ---------- Arte ----------
+# Los archivos fuente de LibreSprite/Aseprite (*.ase, *.aseprite) y Krita (*.kra)
+# SÍ se versionan; solo se ignoran respaldos automáticos.
+*.kra~
+*~
