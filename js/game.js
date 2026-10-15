@@ -55,7 +55,8 @@ function resize() {
   W = window.innerWidth; H = window.innerHeight;
   cv.width = Math.floor(W * DPR); cv.height = Math.floor(H * DPR);
   cv.style.width = W + 'px'; cv.style.height = H + 'px';
-  ZOOM = clamp(Math.min(W / 1280, H / 740), 0.62, 1.6);
+  const touchy = typeof TOUCH !== 'undefined' && TOUCH.on;
+  ZOOM = clamp(Math.min(W / 1280, H / 740), touchy ? 0.5 : 0.62, 1.6);
   ctx.imageSmoothingEnabled = false;
 }
 window.addEventListener('resize', resize);
@@ -460,7 +461,8 @@ function updatePlayer(dt) {
   let mx = ((keys.KeyD || keys.ArrowRight) ? 1 : 0) - ((keys.KeyA || keys.ArrowLeft) ? 1 : 0);
   let my = ((keys.KeyS || keys.ArrowDown) ? 1 : 0) - ((keys.KeyW || keys.ArrowUp) ? 1 : 0);
   const l = Math.hypot(mx, my); if (l) { mx /= l; my /= l; }
-  P.mx = mx; P.my = my; P.moving = l > 0;
+  if (TOUCH.on && (TOUCH.mx || TOUCH.my)) { mx = TOUCH.mx; my = TOUCH.my; }   // stick izquierdo (analógico)
+  P.mx = mx; P.my = my; P.moving = mx !== 0 || my !== 0;
   const mw = mouseWorld();
   P.aim = Math.atan2(mw.y - P.y, mw.x - P.x);
   P.face = Math.cos(P.aim) >= 0 ? 0 : 1;
@@ -1417,6 +1419,7 @@ function frame(now) {
   if (S && mode !== 'menu') render(rdt); else renderMenuBg(rdt);
 }
 function update(dt) {
+  touchUpdate();
   S.t += dt; S.time += dt; S.runTime += dt;
   if (S.timeSlow > 0) S.timeSlow -= dt;
   if (S.comboT > 0) { S.comboT -= dt; if (S.comboT <= 0) S.combo = 0; }
@@ -1785,7 +1788,7 @@ function hudText(t, x, y, size, col, align) {
 }
 
 function drawHUD() {
-  const s = P.s;
+  const s = P.s, T = TOUCH.on, rx = T ? W - 58 - TOUCH.safe.r : W - 14;   // en móvil se deja la columna de botones
   // XP
   bar(0, 0, W, 8, P.xp / P.xpNext, '#4aa3ff', '#101830');
   hudText('NV ' + P.lvl, 14, 30, 16, '#8fd0ff');
@@ -1794,7 +1797,7 @@ function drawHUD() {
   hudText(Math.ceil(P.hp) + ' / ' + s.maxHp, 134, 54, 12, '#fff', 'center');
   // ultimate
   bar(14, 64, 240, 8, P.ultT > 0 ? 1 : P.ult / 100, P.ultT > 0 ? '#ffb020' : P.ult >= 100 ? '#ffd43b' : '#a07020');
-  hudText(P.ult >= 100 && P.ultT <= 0 ? '[Q] ' + P.C.ult.n + ' ¡LISTA!' : 'Q · ' + P.C.ult.n, 14, 88, 11, P.ult >= 100 ? '#ffd43b' : '#c9b080');
+  hudText(P.ult >= 100 && P.ultT <= 0 ? (T ? '' : '[Q] ') + P.C.ult.n + ' ¡LISTA!' : (T ? '' : 'Q · ') + P.C.ult.n, 14, 88, 11, P.ult >= 100 ? '#ffd43b' : '#c9b080');
   // habilidades
   let ax = 14;
   const ab = (label, key, f, ready) => {
@@ -1804,10 +1807,12 @@ function drawHUD() {
     hudText(key + ' ' + label, ax + 36, 114, 10, ready ? '#fff' : '#aaa', 'center');
     ax += 78;
   };
-  ab('Hab.', 'RMB', 1 - Math.max(0, P.secT) / (P.C.sec.cd * (1 - s.cdr)), P.secT <= 0);
-  ab('Dash ' + P.dashCh + '/' + s.dashes, '', P.dashRe / dashCd(), P.dashCh > 0);
+  if (!T) {
+    ab('Hab.', 'RMB', 1 - Math.max(0, P.secT) / (P.C.sec.cd * (1 - s.cdr)), P.secT <= 0);
+    ab('Dash ' + P.dashCh + '/' + s.dashes, '', P.dashRe / dashCd(), P.dashCh > 0);
+  }
   // buffs activos
-  let by2 = 140;
+  let by2 = T ? 200 : 140;
   if (P.powerT > 0) { hudText('⚔ PODER ' + Math.ceil(P.powerT) + 's', 14, by2, 11, '#ff7a5a'); by2 += 16; }
   if (S.timeSlow > 0) { hudText('⏳ TIEMPO LENTO ' + Math.ceil(S.timeSlow) + 's', 14, by2, 11, '#c9d6ff'); by2 += 16; }
   // temporizador / jefe
@@ -1817,17 +1822,18 @@ function drawHUD() {
     hudText(S.L.n.toUpperCase(), W / 2, 60, 11, '#aab', 'center');
   } else if (S.boss) {
     let bw = Math.min(600, W - 600), by = 44;
-    if (bw < 220) { bw = W - 300; by = 140; }   // pantallas angostas: barra bajo las habilidades
+    if (T) bw = clamp(W - 560, 140, 420);
+    else if (bw < 220) { bw = W - 300; by = 140; }   // pantallas angostas: barra bajo las habilidades
     hudText(S.boss.B.n.toUpperCase(), W / 2, by - 8, 16, '#ff6a5a', 'center');
     bar(W / 2 - bw / 2, by, bw, 14, S.boss.hp / S.boss.maxHp, S.boss.phase2 ? '#ff3b1a' : '#c0392b');
   } else if (S.phase === 'cleared') hudText('¡Nivel completado!', W / 2, 40, 20, '#ffd43b', 'center');
   // derecha
-  hudText('☠ ' + S.kills, W - 14, 32, 15, '#fff', 'right');
-  hudText('✦ ' + Math.floor(S.souls) + ' almas', W - 14, 52, 13, '#d0a0ff', 'right');
-  if (SAVE.settings.fps) hudText(fps + ' fps · ' + S.enemies.length + ' enem.', W - 14, 72, 11, '#8f8', 'right');
-  if (SAVE.settings.auto) hudText('AUTO [F]', W - 14, SAVE.settings.fps ? 90 : 72, 11, '#ffd43b', 'right');
-  // armas
-  let wx = 14; const wy = H - 54;
+  hudText('☠ ' + S.kills, rx, 32, 15, '#fff', 'right');
+  hudText('✦ ' + Math.floor(S.souls) + ' almas', rx, 52, 13, '#d0a0ff', 'right');
+  if (SAVE.settings.fps) hudText(fps + ' fps · ' + S.enemies.length + ' enem.', T ? W / 2 : rx, T ? H - 8 : 72, 11, '#8f8', T ? 'center' : 'right');
+  if (SAVE.settings.auto && !T) hudText('AUTO [F]', rx, SAVE.settings.fps ? 90 : 72, 11, '#ffd43b', 'right');
+  // armas (en móvil arriba a la izquierda, para dejar libre el pulgar)
+  let wx = 14; const wy = T ? 96 : H - 54;
   ctx.font = '22px "Segoe UI Emoji", sans-serif';
   for (const w of P.weapons) {
     ctx.fillStyle = '#0b0710'; ctx.fillRect(wx, wy, 44, 44);
@@ -1838,7 +1844,7 @@ function drawHUD() {
     wx += 50;
   }
   // escuelas
-  let sx = 14; const sy = H - 76;
+  let sx = 14; const sy = T ? 146 : H - 76;
   for (const k of SCHOOL_KEYS) {
     const v = P.schools[k]; if (!v) continue;
     const SC = SCHOOLS[k];
@@ -1853,20 +1859,22 @@ function drawHUD() {
   const hy = HYBRIDS.filter(h => P.hyb[h.id]);
   if (hy.length) {
     ctx.font = '15px "Segoe UI Emoji", sans-serif'; ctx.textAlign = 'left';
-    hy.forEach((h, i) => { ctx.fillStyle = '#3a2a10'; ctx.fillRect(14 + i * 26, sy - 26, 24, 22); ctx.fillStyle = '#fff'; ctx.fillText(h.ic, 17 + i * 26, sy - 9); });
+    const hy0 = T ? sy + 22 : sy - 26;
+    hy.forEach((h, i) => { ctx.fillStyle = '#3a2a10'; ctx.fillRect(14 + i * 26, hy0, 24, 22); ctx.fillStyle = '#fff'; ctx.fillText(h.ic, 17 + i * 26, hy0 + 17); });
   }
   // racha
   if (S.combo >= 5) {
     const c = S.combo, col = c >= 200 ? '#ff4aff' : c >= 100 ? '#ff4a4a' : c >= 50 ? '#ff9a3a' : c >= 25 ? '#ffd43b' : '#ffffff';
     const pulse = 1 + Math.max(0, S.comboT - 2.3) * 1.5;
-    hudText('x' + c, W - 20, H * 0.42, Math.round(28 * pulse), col, 'right');
-    hudText('RACHA +' + Math.round((comboMul() - 1) * 100) + '% EXP', W - 20, H * 0.42 + 18, 10, '#ccc', 'right');
-    ctx.fillStyle = col; ctx.fillRect(W - 120, H * 0.42 + 24, 100 * (S.comboT / 2.5), 3);
+    const cx2 = T ? W / 2 + 50 : W - 20, cy2 = T ? 98 : H * 0.42;   // en móvil, bajo el temporizador
+    hudText('x' + c, cx2, cy2, Math.round((T ? 22 : 28) * pulse), col, 'right');
+    hudText('RACHA +' + Math.round((comboMul() - 1) * 100) + '% EXP', cx2, cy2 + 16, 10, '#ccc', 'right');
+    ctx.fillStyle = col; ctx.fillRect(cx2 - 100, cy2 + 22, 100 * (S.comboT / 2.5), 3);
   }
   const hint = terrainHint();
-  if (hint) hudText(hint[0], W / 2, H - 22, 12, hint[1], 'center');
+  if (hint) hudText(hint[0], W / 2, T ? H - 26 : H - 22, 12, hint[1], 'center');
   drawMinimap();
-  hudText('TAB: build · ESC: pausa', W - 14, H - 14, 10, '#778', 'right');
+  if (!T) hudText('TAB: build · ESC: pausa', W - 14, H - 14, 10, '#778', 'right');
   // indicadores fuera de pantalla
   const ind = [];
   for (const p of S.picks) if (p.k === 'chest' && (!p.hidden || revealedAt(p.x, p.y))) ind.push([p.x, p.y, '#ffd43b']);
@@ -1880,7 +1888,7 @@ function drawHUD() {
     const ex = clamp(W / 2 + Math.cos(a) * W, 30, W - 30);
     let ey = clamp(H / 2 + Math.sin(a) * H, 110, H - 90);
     if (ex < 280 && ey < 175) ey = 175;            // no tapar vida/habilidades
-    if (ex < 420 && ey > H - 130) ey = H - 130;    // ni armas/escuelas
+    if (!T && ex < 420 && ey > H - 130) ey = H - 130;    // ni armas/escuelas
     ctx.save(); ctx.translate(ex, ey); ctx.rotate(a);
     ctx.fillStyle = col; ctx.beginPath(); ctx.moveTo(14, 0); ctx.lineTo(-8, -9); ctx.lineTo(-8, 9); ctx.closePath(); ctx.fill();
     ctx.restore();
@@ -1889,10 +1897,12 @@ function drawHUD() {
   if (S.banner) {
     const b = S.banner, a = Math.min(1, b.life * 2, (b.max - b.life) * 4 + 0.2);
     ctx.globalAlpha = a;
-    hudText(b.t, W / 2, H * 0.27, 30, b.col, 'center');
-    if (b.sub) hudText(b.sub, W / 2, H * 0.27 + 28, 14, '#ddd', 'center');
+    const small = H < 520;   // teléfonos en horizontal
+    hudText(b.t, W / 2, H * (small ? 0.36 : 0.27), small ? 18 : 30, b.col, 'center');
+    if (b.sub) hudText(b.sub, W / 2, H * (small ? 0.36 : 0.27) + (small ? 18 : 28), small ? 10 : 14, '#ddd', 'center');
     ctx.globalAlpha = 1;
   }
+  if (T) { touchDraw(); return; }
   // cursor de mira
   ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
   ctx.beginPath(); ctx.arc(mouse.x, mouse.y, 9, 0, TAU); ctx.stroke();
@@ -1900,7 +1910,8 @@ function drawHUD() {
 }
 
 function drawMinimap() {
-  const mm = Math.min(170, Math.round(H * 0.24)), x0 = W - mm - 14, y0 = H - mm - 30, k = mm / WORLD;
+  const T = TOUCH.on, mm = T ? Math.min(120, Math.round(H * 0.27)) : Math.min(170, Math.round(H * 0.24));
+  const x0 = T ? W - TOUCH.safe.r - 58 - mm : W - mm - 14, y0 = T ? 76 : H - mm - 30, k = mm / WORLD;   // en móvil, arriba a la derecha
   ctx.fillStyle = 'rgba(4,2,8,0.85)'; ctx.fillRect(x0 - 2, y0 - 2, mm + 4, mm + 4);
   ctx.imageSmoothingEnabled = false;
   ctx.drawImage(MAP.fogC, x0, y0, mm, mm);

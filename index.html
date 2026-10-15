@@ -2,15 +2,27 @@
 <html lang="es">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#0c0716">
 <title>Ecos del Abismo</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Silkscreen:wght@400;700&display=swap" rel="stylesheet">
 <style>
-  :root { --bg: #0c0716; --panel: #1a1226ee; --line: #3b2a55; --txt: #ece6ff; --dim: #a99cc4; --gold: #ffd43b; --acc: #b066ff; }
+  :root { --sat: env(safe-area-inset-top); --sab: env(safe-area-inset-bottom); --sal: env(safe-area-inset-left); --sar: env(safe-area-inset-right); --bg: #0c0716; --panel: #1a1226ee; --line: #3b2a55; --txt: #ece6ff; --dim: #a99cc4; --gold: #ffd43b; --acc: #b066ff; }
   * { box-sizing: border-box; }
   html, body { margin: 0; height: 100%; overflow: hidden; background: var(--bg); color: var(--txt); font-family: 'Segoe UI', system-ui, sans-serif; user-select: none; }
-  canvas#game { display: block; position: fixed; inset: 0; cursor: none; image-rendering: pixelated; }
+  canvas#game { display: block; position: fixed; inset: 0; cursor: none; image-rendering: pixelated; touch-action: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+  html, body { overscroll-behavior: none; -webkit-tap-highlight-color: transparent; }
+  /* aviso de girar el teléfono: solo en táctiles y en vertical */
+  #rotate { display: none; position: fixed; inset: 0; z-index: 50; background: #0c0716; flex-direction: column; align-items: center; justify-content: center; gap: 14px; text-align: center; padding: 24px; }
+  #rotate .ph { font-size: 64px; animation: spin 2.2s ease-in-out infinite; }
+  @keyframes spin { 0%, 30% { transform: rotate(0); } 60%, 100% { transform: rotate(90deg); } }
+  @media (orientation: portrait) and (pointer: coarse) { #rotate { display: flex; } }
+  .touchOnly { display: none !important; }
+  body.touch .touchOnly { display: inline-block !important; }
+  body.touch .keys { display: none; }
   .px { font-family: 'Silkscreen', monospace; }
   .ov { position: fixed; inset: 0; display: flex; align-items: center; justify-content: safe center; flex-direction: column; padding: 16px; z-index: 5; overflow-y: auto; }
   .ov.dim { background: rgba(6, 3, 12, 0.72); backdrop-filter: blur(2px); }
@@ -102,10 +114,28 @@
   .ostats small { color: var(--dim); }
   .help td { font-size: 14px; padding: 4px 14px 4px 0; } .help td:last-child { color: var(--txt); text-align: left; }
   @media (max-width: 700px) { .card { width: 44vw; min-height: 220px; } .cls { width: 92vw; } }
+  /* pantallas bajas (teléfonos en horizontal) */
+  @media (max-height: 520px) {
+    h1 { font-size: 30px; } h2 { font-size: 20px; } .sub { margin: 2px 0 8px; font-size: 12px; }
+    .label { margin: 6px 0 4px; font-size: 12px; }
+    .cls { width: 210px; padding: 8px; } .cls .d { display: none; } .cls canvas { width: 64px; height: 64px; } .cls ul { font-size: 11.5px; margin: 4px 0; }
+    .card { width: 168px; min-height: 0; padding: 10px; } .card .ic { font-size: 30px; margin: 4px 0; } .card p { font-size: 12px; margin: 4px 0; } .card.path { min-height: 0; }
+    button { padding: 8px 14px; font-size: 13px; } button.big { padding: 10px 28px; font-size: 18px; }
+    .shopItem { width: 112px; padding: 6px; } .shopItem small { min-height: 0; }
+    .ostats div { min-width: 84px; padding: 4px 8px; } .ostats b { font-size: 15px; }
+    .panel { padding: 12px 14px; }
+  }
 </style>
 </head>
 <body>
 <canvas id="game"></canvas>
+
+<!-- GIRA EL TELÉFONO -->
+<div id="rotate">
+  <div class="ph">📱</div>
+  <h2>Gira tu teléfono</h2>
+  <div class="sub">Ecos del Abismo se juega en horizontal.</div>
+</div>
 
 <!-- MENÚ PRINCIPAL -->
 <div id="menu" class="ov">
@@ -122,6 +152,7 @@
     <button id="altarBtn">🎨 Personalizar · Esencia <span id="souls" class="souls">0</span></button>
     <button id="optsBtn">⚙ Opciones</button>
     <button id="helpBtn">❔ Cómo jugar</button>
+    <button id="fsBtn" class="touchOnly">⛶ Pantalla completa</button>
   </div>
   <div class="keys" id="record"></div>
   <div class="keys"><kbd>WASD</kbd> mover · <kbd>Ratón</kbd> apuntar · <kbd>Clic izq</kbd> atacar · <kbd>Clic der</kbd>/<kbd>E</kbd> habilidad · <kbd>Espacio</kbd> dash · <kbd>Q</kbd> definitiva · <kbd>Enter</kbd> jugar</div>
@@ -160,6 +191,7 @@
       <tr><td><kbd>Tab</kbd> (mantener)</td><td>Ver tu build</td></tr>
       <tr><td><kbd>Esc</kbd> / <kbd>P</kbd></td><td>Pausa · <kbd>M</kbd> silenciar</td></tr>
       <tr><td><kbd>1-4</kbd> · <kbd>R</kbd> · <kbd>X</kbd></td><td>Elegir carta · re-tirar · saltar</td></tr>
+      <tr><td>📱 <b>Móvil</b></td><td>Pulgar izquierdo: mover · pulgar derecho: apuntar y disparar (si no, apunta solo) · botones 💨 ✴️ ⭐ · 📜 build · ⏸ pausa</td></tr>
     </table>
     <p class="sub" style="text-align:left">
       • Recoge <b style="color:#7ee36b">gemas</b> para subir de nivel y elegir mejoras.<br>
@@ -220,6 +252,7 @@
 <script src="js/audio.js"></script>
 <script src="js/world.js"></script>
 <script src="js/game.js"></script>
+<script src="js/touch.js"></script>
 <script src="js/ui.js"></script>
 </body>
 </html>

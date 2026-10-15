@@ -8,10 +8,20 @@ Todo está hecho con HTML5 Canvas puro. No usa motor ni librerías, y tampoco im
 
 ## Cómo jugarlo
 
-- **En línea:** *(próximamente en itch.io / GitHub Pages)*
+- **En línea:** https://mariogaytan.github.io/ecos-del-abismo/
 - **En tu compu:** descarga el repositorio y abre `index.html` con doble clic (Chrome o Edge).
 
-Está pensado para **teclado y ratón**. Por ahora no tiene soporte para móviles.
+Se juega con **teclado y ratón** en PC o con **controles táctiles** en el celular.
+
+### En el celular 📱
+
+El juego detecta si el dispositivo es táctil y activa los controles en pantalla:
+
+- **Pulgar izquierdo** (en cualquier punto de la mitad izquierda): stick para moverte.
+- **Pulgar derecho**: stick para apuntar y disparar. Si no lo usas, el héroe apunta y dispara solo al enemigo más cercano.
+- **Botones**: 💨 dash, ✴️ habilidad, ⭐ definitiva, 📜 build y ⏸ pausa.
+
+Se juega **en horizontal**: si el teléfono está en vertical aparece un aviso para girarlo y el juego se pausa. En Android, el botón *Pantalla completa* también fija la orientación. En móviles arranca en calidad baja para cuidar la batería y los FPS; se puede cambiar en *Opciones*.
 
 | Tecla | Acción |
 |---|---|
@@ -96,6 +106,7 @@ js/sprites.js     Pixel art escrito como texto + rasterizador con contorno autom
 js/audio.js       Efectos y música sintetizados con WebAudio
 js/world.js       Generador procedural: cuevas, terreno, trampas, zonas, guardianes, niebla
 js/game.js        Motor: bucle, combate, IA, jefes, oleadas, render y HUD
+js/touch.js       Controles táctiles: doble stick, botones y aviso de orientación
 js/ui.js          Menú, personalización, subida de nivel, encrucijada y fin de partida
 ```
 

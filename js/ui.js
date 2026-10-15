@@ -49,6 +49,7 @@ const UI = {
   },
   play() {
     AU.init(); AU.sfx('ui');
+    goFullscreenLandscape();
     hide('menu');
     startRun(this.cls, this.start);
   },
@@ -113,7 +114,7 @@ const UI = {
       const b = document.createElement('button'); b.className = 'opt';
       b.innerHTML = `<span>${n}</span><b>${v}</b>`;
       b.onclick = () => {
-        if (k === 'quality') { st.quality = st.quality === 'high' ? 'low' : 'high'; resize(); }
+        if (k === 'quality') { st.quality = st.quality === 'high' ? 'low' : 'high'; st.qSet = true; resize(); }
         else st[k] = !st[k];
         persist(); AU.sfx('ui'); this.openOpts();
       };
@@ -398,6 +399,9 @@ window.addEventListener('load', () => {
   $('altarBtn').onclick = () => { AU.init(); UI.openCustom(); };
   $('optsBtn').onclick = () => { AU.init(); UI.openOpts(); };
   $('helpBtn').onclick = () => show('help');
+  $('stats').onclick = () => { keys.Tab = false; hide('stats'); };   // en móvil se cierra tocándola
+  $('fsBtn').onclick = () => goFullscreenLandscape();
+  if (TOUCH.on) document.body.classList.add('touch');
   document.querySelectorAll('[data-close]').forEach(b => b.onclick = () => hide(b.dataset.close));
   $('rerollBtn').onclick = () => UI.reroll();
   $('skipBtn').onclick = () => UI.skip();
