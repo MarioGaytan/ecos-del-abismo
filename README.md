@@ -43,8 +43,9 @@ Elijo un héroe, bajo al Abismo y sobrevivo dos minutos y medio a oleadas que no
 ### Modos y dificultad
 
 - **⚔ Campaña:** los 3 niveles con su jefe.
-- **∞ Hordas infinitas:** un solo mapa gigante (unas 3 veces más grande) que mezcla bosque, cripta y forja. Los enemigos cambian según el bioma que pisas y la **amenaza** sube cada 30 segundos sin parar. Cada 3 minutos llega un jefe; al derrotarlo, su portal lleva al Altar de Almas. El reto es ver cuánto aguantas.
+- **∞ Hordas infinitas:** un solo mapa gigante (unas 3 veces más grande) que mezcla bosque, cripta y forja. Los enemigos cambian según el bioma que pisas y la **amenaza** sube cada 30 segundos sin parar. Cada 3 minutos llega un jefe; al derrotarlo subes una **Ascensión** (más enemigos, más élites, hordas mezcladas de los 3 biomas y +1 re-tirada) y su portal lleva al Altar de Almas. El reto es ver cuánto aguantas.
 - **Dificultad:** 🌱 Fácil, ⚔️ Normal, 🔥 Difícil o 💀 Pesadilla. Cambia la experiencia y la vida, el daño y la cantidad de enemigos. Las más difíciles dan más Esencia.
+- **El Abismo crece contigo:** cada nivel que subes trae algo más de enemigos y más resistentes, y cada 10 niveles te lo avisa. Ese extra no da más experiencia, así que no se puede abusar.
 - **Ira del Abismo:** si arrasas sin recibir daño, el Abismo se enfada y manda más enemigos y más resistentes (sin dar más experiencia). Si vas mal, se calma. Así el reto se mantiene sin volverse imposible.
 
 ### Los héroes
@@ -66,7 +67,10 @@ Lo que más me importaba era que hubiera **muchas formas de romper el juego**:
 - **28 mejoras en 4 rarezas** (Común, Raro, Épico, Legendario). La rareza multiplica el efecto.
 - **6 armas automáticas** (máximo 4 a la vez). Un arma a nivel 5 con 6 puntos en su escuela **evoluciona**: *Sol Negro*, *Ventisca Eterna*, *Juicio del Cielo*, *Mil Filos*, *Legión Carmesí* y *Cataclismo*.
 - **Racha de combate**: cada baja seguida da hasta +25% de experiencia, con premios en x25, x50, x100… Se corta si paso 2.5 segundos sin matar.
-- **Las gemas de experiencia se desvanecen** si no las recoges en 40 segundos: hay que moverse.
+- **Las gemas de experiencia se desvanecen** si no las recoges en 40 segundos: hay que moverse. Con 3 mejoras de Imán puede aparecer **Singularidad**, que cada 12 s atrae todas las gemas del mapa.
+- **Solo aparecen mejoras que sirven:** si una estadística llegó a su tope, o una mejora no combina con tu build (perforación sin proyectiles, daño de quemadura sin nada que queme…), no se ofrece.
+- **Topes para que nada se rompa:** crítico máx. 80%, daño crítico x4, 6 proyectiles extra, área x2.6, robo de vida 12%, esquiva 60%; la velocidad de ataque rinde la mitad pasado x2, y el rayo en cadena tiene un límite por segundo.
+- **Esquiva perfecta:** el dash te hace invulnerable. Si lo haces justo cuando una bala o un enemigo está encima, el tiempo se ralentiza, recuperas la carga, lanzas una onda de choque y ganas +25% de daño durante 3 s.
 - **Altar de Almas**: entre niveles gasto las almas de esa partida en fuerza, vida, elixires, re-tiradas o una pluma de fénix.
 - **Encrucijada**: elijo 1 de 3 caminos, algunos seguros y otros malditos con mejor recompensa.
 
@@ -80,6 +84,7 @@ Cada nivel se genera de forma procedural cada vez que juegas:
 - **Santuarios protegidos por un guardián**, con poder, curación, cofres o tiempo lento como premio… y un altar maldito para los valientes.
 - **Zonas especiales**: la *Arboleda Sagrada* cura; la *Zona Maldita* da más experiencia a cambio de más peligro.
 - **Cofres escondidos** en callejones sin salida.
+- **Puzles:** *Runas de memoria* (la tablilla muestra una secuencia de símbolos; písalos en ese orden, y si te equivocas aparecen enemigos) y *Braseros* (enciende los 4 a la vez antes de que se apaguen). Al resolverlos ganas una mejora épica o mejor.
 - **Niebla de guerra**: el mapa se revela conforme lo exploro.
 
 ### Los niveles

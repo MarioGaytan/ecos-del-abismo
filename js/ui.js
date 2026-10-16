@@ -153,14 +153,14 @@ const UI = {
     this.lvKind = kind;
     mouse.l = false;
     this.roll();
-    $('lvTitle').textContent = kind === 'boss' ? '👑 Cofre del Jefe' : kind === 'chest' ? '🎁 ¡Cofre!' : '⬆ ¡Nivel ' + (P.lvl - S.pendingLv) + '!';
+    $('lvTitle').textContent = kind === 'boss' ? '👑 Cofre del Jefe' : kind === 'puzzle' ? '🧩 ¡Puzle resuelto!' : kind === 'chest' ? '🎁 ¡Cofre!' : '⬆ ¡Nivel ' + (P.lvl - S.pendingLv) + '!';
     $('lvSub').textContent = kind === 'level' ? 'Elige una mejora. Especialízate: 3/6/9 puntos en una escuela desbloquean poderes.' : 'Recompensa de rareza superior';
     show('levelup');
     this.openedAt = performance.now();
     AU.sfx(kind === 'level' ? 'level' : 'chest');
   },
   roll() {
-    const minR = this.lvKind === 'boss' ? 2 : this.lvKind === 'chest' ? 1 : 0;
+    const minR = this.lvKind === 'boss' || this.lvKind === 'puzzle' ? 2 : this.lvKind === 'chest' ? 1 : 0;
     const n = P.s.luck >= 50 ? 4 : 3;
     this.choices = genChoices(n, minR, this.lvKind === 'boss');
     const box = $('cards'); box.innerHTML = '';
@@ -194,7 +194,8 @@ const UI = {
   // ------------------------------------------------ ENCRUCIJADA
   openCross() {
     mode = 'cross';
-    const pool = PATHS.slice().sort(() => Math.random() - 0.5).slice(0, 3);
+    const allMaxed = P.weapons.length >= 4 && P.weapons.every(w => w.lvl >= 5);
+    const pool = PATHS.filter(p => !(p.id === 'forja' && allMaxed)).sort(() => Math.random() - 0.5).slice(0, 3);
     this.paths = pool;
     const next = LEVELS[S.lvlIdx + 1];
     $('crossSub').textContent = S.endless ? 'El Abismo no termina. Gasta tus almas y elige una bendición.' : `Siguiente: ${next.sub} — ${next.n}. Gasta tus almas y elige tu camino.`;
@@ -302,7 +303,7 @@ function nextTier(sch, pts) {
 function srcName(k) {
   const C = P.C;
   const m = { prim: C.prim.n, sec: C.sec.n, ult: C.ult.n, burn: 'Quemaduras', chain: 'Rayos en cadena', fuego: 'Explosiones ígneas', hielo: 'Esquirlas de hielo',
-    tormenta: 'Tormenta', sangre: 'Nova de sangre', espinas: 'Espinas', trampas: 'Trampas (enemigos atraídos)', terreno: 'Terreno dañino', piroclasto: 'Piroclasto', fantasma: 'Paso Fantasma', hemomancia: 'Hemomancia', fenix: 'Fénix' };
+    tormenta: 'Tormenta', sangre: 'Nova de sangre', espinas: 'Espinas', trampas: 'Trampas (enemigos atraídos)', terreno: 'Terreno dañino', piroclasto: 'Piroclasto', fantasma: 'Paso Fantasma', hemomancia: 'Hemomancia', fenix: 'Fénix', dash: 'Esquiva perfecta' };
   return m[k] || (WEAPONS[k] ? WEAPONS[k].ic + ' ' + WEAPONS[k].n : k);
 }
 function dmgBreakdown() {
@@ -326,10 +327,34 @@ function rollRarity(minR) {
   for (let i = 0; i < 4; i++) { r -= w[i]; if (r <= 0) return i; }
   return 3;
 }
+// ¿Sirve esta mejora ahora? Oculta las que ya llegaron a su tope real o no combinan con tu build.
+function upgradeUseful(u) {
+  const s = P.s, b = P.b, has = id => P.weapons.some(w => w.id === id);
+  const shoots = P.cls !== 'guerrero' || s.proj > 0 || has('dagas') || has('craneos');
+  switch (u.id) {
+    case 'evasion': return s.dodge < 0.6;
+    case 'celer': return s.cdr < 0.65;
+    case 'escarcha': return s.slow < 0.7;
+    case 'ojo': return s.crit < 0.8;
+    case 'asesino': case 'frenesi': return b.atkSpd < 3;
+    case 'brasas': return s.burnCh < 1;
+    case 'chispa': return s.chainCh < 1;
+    case 'cero': return s.freezeCh < 0.5;
+    case 'multi': return s.proj < 6;
+    case 'amplif': return s.area < 2.6;
+    case 'colmillos': return s.lifesteal < 0.12;
+    case 'letal': return s.crit >= 0.08 && s.critMult < 4;
+    case 'perfor': case 'velproj': return shoots;                       // sin proyectiles no sirven
+    case 'corazon': case 'pirom': return s.burnCh > 0 || has('orbes');   // necesitan algo que queme
+    case 'conductor': return s.chainCh > 0 || has('rayos');              // necesitan rayos en cadena
+    case 'singularidad': return (P.ups.iman || 0) >= 3;
+  }
+  return true;
+}
 function genChoices(n, minR, bossChest) {
   const cand = [];
   for (const u of UPGRADES) {
-    if ((P.ups[u.id] || 0) >= u.max) continue;
+    if ((P.ups[u.id] || 0) >= u.max || !upgradeUseful(u)) continue;
     let w = 10;
     if (u.sch) w *= 1 + P.schools[u.sch] * 0.18; // sesgo hacia tu especialización
     cand.push({ kind: 'up', u, w });

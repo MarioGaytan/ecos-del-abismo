@@ -14,8 +14,8 @@ const num = v => (Math.round(v * 10) / 10).toString();
 const RAR = [
   { n: 'Común', c: '#c8c8d0', m: 1 },
   { n: 'Raro', c: '#4aa3ff', m: 1.5 },
-  { n: 'Épico', c: '#b066ff', m: 1.9 },
-  { n: 'Legendario', c: '#ffb020', m: 2.6 },
+  { n: 'Épico', c: '#b066ff', m: 1.7 },
+  { n: 'Legendario', c: '#ffb020', m: 2.2 },
 ];
 
 // Escuelas: acumular puntos (3/6/9) desbloquea bonos de hiperespecialización.
@@ -81,9 +81,10 @@ const CLASSES = {
 
 // m = multiplicador por rareza. Cada mejora suma 1 punto a su escuela (legendaria: 2).
 const UPGRADES = [
-  { id: 'poder', n: 'Poder Bruto', ic: '💪', sch: null, max: 12, tx: m => `+${pct(0.10 * m)} daño`, ap: (b, m) => b.dmg += 0.10 * m },
-  { id: 'iman', n: 'Imán', ic: '🧲', sch: null, max: 5, tx: m => `+${pct(0.35 * m)} rango de recogida`, ap: (b, m) => b.magnet *= 1 + 0.35 * m },
-  { id: 'sabid', n: 'Sabiduría', ic: '📜', sch: null, max: 6, tx: m => `+${pct(0.12 * m)} experiencia`, ap: (b, m) => b.xp += 0.12 * m },
+  { id: 'poder', n: 'Poder Bruto', ic: '💪', sch: null, max: 10, tx: m => `+${pct(0.10 * m)} daño`, ap: (b, m) => b.dmg += 0.10 * m },
+  { id: 'iman', n: 'Imán', ic: '🧲', sch: null, max: 8, tx: m => `+${pct(0.4 * m)} rango de recogida`, ap: (b, m) => b.magnet *= 1 + 0.4 * m },
+  { id: 'singularidad', n: 'Singularidad', ic: '🌀', sch: null, max: 1, minR: 2, tx: () => 'Cada 12s atraes TODAS las gemas del mapa', ap: b => b.singular = 1 },
+  { id: 'sabid', n: 'Sabiduría', ic: '📜', sch: null, max: 4, tx: m => `+${pct(0.08 * m)} experiencia`, ap: (b, m) => b.xp += 0.08 * m },
   { id: 'suerte', n: 'Trébol', ic: '🍀', sch: null, max: 5, tx: m => `+${Math.round(12 * m)} suerte (mejores rarezas)`, ap: (b, m) => b.luck += 12 * m },
 
   { id: 'brasas', n: 'Brasas', ic: '🔥', sch: 'fuego', max: 6, tx: m => `+${pct(0.14 * m)} prob. de quemar`, ap: (b, m) => b.burnCh += 0.14 * m },
@@ -100,8 +101,8 @@ const UPGRADES = [
   { id: 'dashx', n: 'Paso Relámpago', ic: '💨', sch: 'tormenta', max: 3, minR: 1, tx: () => '+1 carga de dash', ap: b => b.dashes += 1 },
 
   { id: 'colmillos', n: 'Colmillos', ic: '🦇', sch: 'sangre', max: 6, tx: m => `+${pct(0.015 * m)} robo de vida`, ap: (b, m) => b.lifesteal += 0.015 * m },
-  { id: 'vigor', n: 'Vigor', ic: '💗', sch: 'sangre', max: 8, tx: m => `+${Math.round(22 * m)} vida máx. y te cura`, ap: (b, m) => b.maxHp += 22 * m, heal: m => 22 * m },
-  { id: 'frenesi', n: 'Frenesí', ic: '😤', sch: 'sangre', max: 8, tx: m => `+${pct(0.1 * m)} velocidad de ataque`, ap: (b, m) => b.atkSpd += 0.1 * m },
+  { id: 'vigor', n: 'Vigor', ic: '💗', sch: 'sangre', max: 6, tx: m => `+${Math.round(22 * m)} vida máx. y te cura`, ap: (b, m) => b.maxHp += 22 * m, heal: m => 22 * m },
+  { id: 'frenesi', n: 'Frenesí', ic: '😤', sch: 'sangre', max: 6, tx: m => `+${pct(0.1 * m)} velocidad de ataque`, ap: (b, m) => b.atkSpd += 0.1 * m },
   { id: 'regen', n: 'Regeneración', ic: '✚', sch: 'sangre', max: 6, tx: m => `+${num(0.6 * m)} vida/seg`, ap: (b, m) => b.regen += 0.6 * m },
   { id: 'espinas', n: 'Espinas', ic: '🌵', sch: 'sangre', max: 5, tx: m => `Devuelves ${Math.round(20 * m)} daño al ser golpeado`, ap: (b, m) => b.thorns += 20 * m },
 
@@ -191,7 +192,7 @@ const PATHS = [
   { id: 'guerra', n: 'Sendero de Guerra', ic: '⚔️', d: '+3 subidas de nivel ahora. Enemigos +15% vida.' },
   { id: 'santuario', n: 'Santuario', ic: '⛲', d: 'Curación total y +30 vida máxima.' },
   { id: 'pacto', n: 'Pacto de Sangre', ic: '🩸', d: '+30% daño permanente, pero -15% vida máxima.' },
-  { id: 'maldito', n: 'Camino Maldito', ic: '💀', d: 'Enemigos +35% más y +25% vida. +50% exp y almas x2.' },
+  { id: 'maldito', n: 'Camino Maldito', ic: '💀', d: 'Enemigos +35% más y +25% vida. +25% exp y almas x2.' },
   { id: 'reliquia', n: 'Reliquia Antigua', ic: '🏺', d: 'Abres un cofre legendario.' },
   { id: 'forja', n: 'Yunque Rúnico', ic: '🔨', d: 'Todas tus armas suben +1 nivel (o recibes una nueva).' },
   { id: 'destino', n: 'Ojo del Destino', ic: '👁️', d: '+3 re-tiradas y +20 suerte.' },

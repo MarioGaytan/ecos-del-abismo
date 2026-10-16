@@ -204,6 +204,45 @@ function genMap(L, endless) {
       break;
     }
   }
+  // puzles: runas de memoria y braseros, lejos de santuarios
+  const puzzles = [], nPz = endless ? 6 : 2;
+  for (let k = 0; k < nPz; k++) {
+    let best = -1, bs = -1;
+    for (let s = 0; s < 200; s++) {
+      const i = pick(floorTiles); if (D[i] < 10) continue;
+      const x = (i % n + 0.5) * TILE, y = (((i / n) | 0) + 0.5) * TILE;
+      let md = 1e9;
+      for (const sh of shrines) md = Math.min(md, Math.hypot(sh.x - x, sh.y - y));
+      for (const pz of puzzles) md = Math.min(md, Math.hypot(pz.x - x, pz.y - y));
+      if (md < 8 * TILE) continue;
+      const score = Math.min(md, 25 * TILE) + Math.random() * TILE * 4;
+      if (score > bs) { bs = score; best = i; }
+    }
+    if (best < 0) continue;
+    const tx = best % n, ty = (best / n) | 0;
+    for (let y = ty - 3; y <= ty + 3; y++) for (let x = tx - 3; x <= tx + 3; x++) if (x > 1 && y > 1 && x < n - 2 && y < n - 2 && (x - tx) ** 2 + (y - ty) ** 2 <= 10) t[y * n + x] = TF;
+    const cx = (tx + 0.5) * TILE, cy = (ty + 0.5) * TILE;
+    if (k % 2 === 0) {
+      const order = [0, 1, 2, 3].sort(() => Math.random() - 0.5);
+      const offs = [[-2, 0], [2, 0], [0, -2], [0, 2]];
+      puzzles.push({ type: 'runas', x: cx, y: cy, order, step: 0, solved: false, cool: 0,
+        plates: offs.map(([ox, oy], j) => ({ x: cx + ox * TILE, y: cy + oy * TILE, sym: j, lit: false, on: false })) });
+    } else {
+      const braz = [];
+      for (let q = 0; q < 4; q++) {
+        for (let s = 0; s < 40; s++) {
+          const a = q / 4 * TAU + rnd(-0.4, 0.4), r = rnd(4, 7);
+          const bx = Math.round(tx + Math.cos(a) * r), by = Math.round(ty + Math.sin(a) * r);
+          if (bx < 2 || by < 2 || bx >= n - 2 || by >= n - 2 || t[by * n + bx] === TW || D[by * n + bx] < 0) continue;
+          t[by * n + bx] = TF;
+          braz.push({ x: (bx + 0.5) * TILE, y: (by + 0.5) * TILE, t: 0 });
+          break;
+        }
+      }
+      if (braz.length === 4) puzzles.push({ type: 'braseros', x: cx, y: cy, braz, solved: false });
+    }
+  }
+  for (let q = traps.length - 1; q >= 0; q--) if (puzzles.some(pz => Math.hypot(pz.x - traps[q].x, pz.y - traps[q].y) < 3.5 * TILE)) traps.splice(q, 1);
   // cofres escondidos en callejones sin salida
   const chests = [], nCh = endless ? 8 : 3;
   const deadEnds = floorTiles.filter(i => {
@@ -224,6 +263,7 @@ function genMap(L, endless) {
     const i = pick(floorTiles); if (t[i] !== TF || D[i] < 5) continue;
     const x = (i % n + rnd(0.2, 0.8)) * TILE, y = (((i / n) | 0) + rnd(0.2, 0.8)) * TILE;
     if (shrines.some(sh => Math.hypot(sh.x - x, sh.y - y) < 3.2 * TILE) || chests.some(ch => Math.hypot(ch.x - x, ch.y - y) < TILE)) continue;
+    if (puzzles.some(pz => Math.hypot(pz.x - x, pz.y - y) < 3.5 * TILE)) continue;
     if (traps.some(tr => Math.hypot(tr.x - x, tr.y - y) < TILE * 0.8)) continue;
     const [type] = wpick(LEVELS[bio[i]].props, p => p[1]);
     const sc = { tree: 5, rock: 4, mush: 3.5, tomb: 4, pillar: 4.5, crystal: 4.5, spike: 5 }[type] * rnd(0.85, 1.15);
@@ -238,7 +278,7 @@ function genMap(L, endless) {
   }
 
   MAP = {
-    n, t, bio, dir, D, traps, zones, shrines, chests, props, decals, endless,
+    n, t, bio, dir, D, traps, zones, shrines, chests, props, decals, endless, puzzles,
     flow: new Int32Array(N).fill(-1), fver: 0, ptx: -1, pty: -1,
     fog: new Uint8Array(N), fogImg: new ImageData(n, n), fogC: newCanvas(n, n),
   };
@@ -393,6 +433,7 @@ function reveal(tx, ty) {
 // ---------------------------------------------------------------- lógica por fotograma
 function updateWorld(dt) {
   updateFlow();
+  updatePuzzles(dt);
   P.inZone = null;
   for (const z of MAP.zones) if ((P.x - z.x) ** 2 + (P.y - z.y) ** 2 < z.r * z.r) { P.inZone = z.type; z.seen = true; }
   if (P.inZone === 'sagrada') heal(P.s.maxHp * 0.02 * dt);
@@ -425,6 +466,100 @@ function updateWorld(dt) {
         if (tr.kind === 'vent' && !e.dead) ignite(e);
       }
       if (near < 600 * 600) part(tr.x, tr.y, tr.kind === 'vent' ? '#ff8a2a' : tr.kind === 'frost' ? '#bfefff' : '#d8d0c0', 5, 120, 0.35, 3, tr.kind === 'vent' ? -200 : 0);
+    }
+  }
+}
+
+// ---------------------------------------------------------------- puzles
+const RUNE_SYM = ['◆', '▲', '●', '■'], RUNE_COL = ['#ff5a8a', '#ffd43b', '#5bff8a', '#6aa8ff'];
+function solvePuzzle(pz) {
+  pz.solved = true; S.puzzles = (S.puzzles || 0) + 1;
+  const sp = safeSpot(pz.x, pz.y);
+  S.picks.push({ k: 'chest', x: sp.x, y: sp.y, tier: 2 });
+  for (let i = 0; i < 8; i++) S.picks.push({ k: 'soul', x: pz.x + rnd(-60, 60), y: pz.y + rnd(-60, 60), v: 2 });
+  banner('🧩 ¡Puzle resuelto!', 'Recoge el cofre: mejora épica o superior', 2.4, '#5bffd0');
+  ring(pz.x, pz.y, 10, 260, 0.6, '#5bffd0', 8);
+  AU.sfx('chest');
+}
+function updatePuzzles(dt) {
+  for (const pz of MAP.puzzles) {
+    if (pz.solved) continue;
+    const near = (P.x - pz.x) ** 2 + (P.y - pz.y) ** 2 < 600 * 600;
+    if (!near) continue;
+    if (pz.type === 'runas') {
+      pz.cool -= dt;
+      for (const pl of pz.plates) {
+        const on = (P.x - pl.x) ** 2 + (P.y - pl.y) ** 2 < 34 * 34;
+        if (on && !pl.on && !pl.lit && pz.cool <= 0) {
+          if (pz.order[pz.step] === pl.sym) {
+            pl.lit = true; pz.step++; AU.sfx('pick');
+            part(pl.x, pl.y, RUNE_COL[pl.sym], 10, 120, 0.4, 3);
+            if (pz.step >= 4) solvePuzzle(pz);
+          } else {                                   // error: se reinicia y aparecen enemigos
+            pz.step = 0; pz.cool = 1; for (const q of pz.plates) q.lit = false;
+            banner('✖ Secuencia incorrecta', 'Mira la tablilla de nuevo', 1.5, '#ff6a5a');
+            AU.sfx('hurt');
+            for (let i = 0; i < 4; i++) { const sp = randomFloorAround(pz.x, pz.y, 120, 260, 10); if (sp) spawnEnemy(pick(S.L.spawns).e, sp.x, sp.y); }
+          }
+        }
+        pl.on = on;
+      }
+    } else {
+      let lit = 0;
+      for (const b of pz.braz) {
+        b.t -= dt;
+        if ((P.x - b.x) ** 2 + (P.y - b.y) ** 2 < 46 * 46) { if (b.t <= 0) AU.sfx('pick'); b.t = 12; }
+        if (b.t > 0) lit++;
+      }
+      if (lit === 4) solvePuzzle(pz);
+    }
+  }
+}
+function puzzleHint() {
+  for (const pz of MAP.puzzles) {
+    if (pz.solved || (P.x - pz.x) ** 2 + (P.y - pz.y) ** 2 > 330 * 330) continue;
+    if (pz.type === 'runas') return ['🧩 Runas de memoria: acércate a la tablilla y pisa las losas en ese orden (' + pz.step + '/4)', '#5bffd0'];
+    const lit = pz.braz.filter(b => b.t > 0).length;
+    return ['🧩 Braseros: enciende los 4 a la vez, cada uno dura 12s (' + lit + '/4)', '#ffb040'];
+  }
+  return null;
+}
+function drawPuzzles(vis) {
+  for (const pz of MAP.puzzles) {
+    if (!vis(pz.x, pz.y, 600)) continue;
+    if (pz.type === 'runas') {
+      // tablilla: muestra la secuencia de símbolos uno a uno cuando estás cerca
+      const near = (P.x - pz.x) ** 2 + (P.y - pz.y) ** 2 < 200 * 200;
+      shadow(pz.x, pz.y + 6, 24);
+      ctx.fillStyle = '#1b1424'; ctx.fillRect(pz.x - 22, pz.y - 46, 44, 50);
+      ctx.fillStyle = pz.solved ? '#2a4a3a' : '#3d3550'; ctx.fillRect(pz.x - 19, pz.y - 43, 38, 44);
+      ctx.textAlign = 'center'; ctx.font = 'bold 22px "Segoe UI Symbol", sans-serif';
+      if (pz.solved) { ctx.fillStyle = '#5bffd0'; ctx.fillText('✔', pz.x, pz.y - 14); }
+      else if (near) {
+        const k = Math.floor(S.time / 0.8) % 5;          // 4 símbolos y una pausa
+        if (k < 4) { const sy = pz.order[k]; ctx.drawImage(glowSpr(RUNE_COL[sy]), pz.x - 30, pz.y - 52, 60, 60); ctx.fillStyle = RUNE_COL[sy]; ctx.fillText(RUNE_SYM[sy], pz.x, pz.y - 14); ctx.font = '10px Silkscreen, monospace'; ctx.fillStyle = '#ddd'; ctx.fillText((k + 1) + 'º', pz.x, pz.y - 1); }
+      } else { ctx.fillStyle = '#8a80a0'; ctx.fillText('?', pz.x, pz.y - 14); }
+      for (const pl of pz.plates) {
+        ctx.fillStyle = '#1b1424'; ctx.fillRect(pl.x - 28, pl.y - 28, 56, 56);
+        ctx.fillStyle = pl.lit || pz.solved ? rgba(RUNE_COL[pl.sym], 0.55) : '#2e2840'; ctx.fillRect(pl.x - 25, pl.y - 25, 50, 50);
+        if (pl.lit) ctx.drawImage(glowSpr(RUNE_COL[pl.sym]), pl.x - 40, pl.y - 40, 80, 80);
+        ctx.font = 'bold 26px "Segoe UI Symbol", sans-serif'; ctx.fillStyle = RUNE_COL[pl.sym]; ctx.textAlign = 'center';
+        ctx.fillText(RUNE_SYM[pl.sym], pl.x, pl.y + 9);
+      }
+    } else {
+      for (const b of pz.braz) {
+        if (!vis(b.x, b.y, 60)) continue;
+        shadow(b.x, b.y + 6, 18);
+        ctx.fillStyle = '#1b1424'; ctx.fillRect(b.x - 14, b.y - 34, 28, 38);
+        ctx.fillStyle = '#4a4458'; ctx.fillRect(b.x - 11, b.y - 31, 22, 32);
+        ctx.fillStyle = '#2a2433'; ctx.fillRect(b.x - 16, b.y - 38, 32, 8);
+        if (b.t > 0 || pz.solved) {
+          const f = 0.8 + Math.sin(S.time * 14 + b.x) * 0.2;
+          ctx.drawImage(glowSpr('#ff9a2a'), b.x - 34 * f, b.y - 76, 68 * f, 68);
+          ctx.fillStyle = '#ffd43b'; ctx.fillRect(b.x - 5, b.y - 54 * f, 10, 16 * f);
+          if (!pz.solved) { ctx.strokeStyle = '#ffb040'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(b.x, b.y - 14, 26, -Math.PI / 2, -Math.PI / 2 + TAU * (b.t / 12)); ctx.stroke(); }
+        } else { ctx.fillStyle = '#6a5a52'; ctx.fillRect(b.x - 6, b.y - 42, 12, 4); }
+      }
     }
   }
 }
@@ -579,6 +714,7 @@ function drawFog(x0, y0, x1, y1) {
 }
 function terrainHint() {
   if (!MAP) return null;
+  const ph = puzzleHint(); if (ph) return ph;
   const tt = tileAt(P.x, P.y), TER = terAt(P.x, P.y);
   if (P.inZone) return [ZONES[P.inZone].n + ': ' + ZONES[P.inZone].d, ZONES[P.inZone].c];
   if (tt === TSLOW) return [TER.slow[0] + ': -45% velocidad', '#d8d0b0'];

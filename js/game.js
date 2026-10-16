@@ -159,7 +159,7 @@ function insideProp(x, y, r) {
 //  PARTIDA
 // =====================================================================
 // Curva de experiencia: niveles rápidos al principio y cada vez más lentos (fin del bosque ≈ nivel 14-16 en Normal)
-function xpNeed(l) { return Math.floor(10 + l * 6.5 + Math.pow(l, 1.75) * 0.9); }
+function xpNeed(l) { return Math.floor(12 + l * 7 + Math.pow(l, 1.85)); }
 
 function startRun(clsId, startLvl, endless) {
   const C0 = CLASSES[clsId], cu = heroCustom(clsId);
@@ -214,7 +214,7 @@ function groundPats() {
 function loadLevel(i) {
   const endless = i < 0, L = endless ? makeEndlessLevel() : LEVELS[i];
   Object.assign(S, {
-    lvlIdx: endless ? 0 : i, L, t: 0, curBio: 0, nextBoss: 180, bossN: 0, evT: 45, time: 0, phase: 'waves', enemies: [], proj: [], eproj: [], parts: [], texts: [],
+    lvlIdx: endless ? 0 : i, L, t: 0, curBio: 0, nextBoss: 180, bossN: 0, asc: 0, evT: 45, puzzles: 0, time: 0, phase: 'waves', enemies: [], proj: [], eproj: [], parts: [], texts: [],
     gems: [], picks: [], fx: [], boss: null, portal: null, spawnAcc: 0, evIdx: 0, booms: [],
     slowmo: 0, shake: 0, banner: null, nextId: 1, embers: [], timeSlow: 0,
   });
@@ -260,6 +260,10 @@ function recalc() {
   if (H.hemomancia) s.area += 0.2;
   if (H.ilusion) { s.crit += 0.1; s.critMult += 0.3; s.cdr += 0.1; }
   s.dodge = Math.min(0.6, s.dodge); s.cdr = Math.min(0.65, s.cdr); s.slow = Math.min(0.7, s.slow);
+  s.crit = Math.min(0.8, s.crit); s.critMult = Math.min(4, s.critMult); s.proj = Math.min(6, s.proj);
+  s.area = Math.min(2.6, s.area); s.lifesteal = Math.min(0.12, s.lifesteal);
+  s.chainCh = Math.min(0.5, s.chainCh); s.chainJumps = Math.min(6, s.chainJumps); s.chainDmg = Math.min(1, s.chainDmg);
+  if (s.atkSpd > 2) s.atkSpd = 2 + (s.atkSpd - 2) * 0.5;   // más allá de x2, rinde la mitad
   s.maxHp = Math.round(s.maxHp);
   const prev = P.s ? P.s.maxHp : s.maxHp;
   P.s = s;
@@ -317,7 +321,7 @@ function shake(v) { S.shake = Math.max(S.shake, v); }
 //  COMBATE
 // =====================================================================
 function critChance() { return P.s.crit + (P.ultT > 0 && P.cls === 'picaro' ? 1 : 0); }
-function dmgMul() { return P.s.dmg * (P.powerT > 0 ? 1.4 : 1) * (P.warcryT > 0 ? 1.25 : 1) * (P.ultT > 0 && P.cls === 'guerrero' ? 1.6 : 1) * (P.schools.sangre >= 9 ? 1 + (1 - P.hp / P.s.maxHp) : 1); }
+function dmgMul() { return P.s.dmg * (P.powerT > 0 ? 1.4 : 1) * (P.perfectT > 0 ? 1.25 : 1) * (P.warcryT > 0 ? 1.25 : 1) * (P.ultT > 0 && P.cls === 'guerrero' ? 1.6 : 1) * (P.schools.sangre >= 9 ? 1 + (1 - P.hp / P.s.maxHp) : 1); }
 
 function hitEnemy(e, base, o) {
   o = o || {};
@@ -348,7 +352,7 @@ function hitEnemy(e, base, o) {
     if (Math.random() < s.burnCh) ignite(e);
     if (s.slow > 0) { e.slowT = 2; e.slowAmt = Math.max(e.slowAmt, s.slow); }
     if (!e.boss && Math.random() < s.freezeCh) e.freezeT = 1.3;
-    if (Math.random() < s.chainCh) chain(e, d * s.chainDmg, s.chainJumps);
+    if (S.chainT <= 0 && Math.random() < s.chainCh) { S.chainT = 0.06; chain(e, d * s.chainDmg, s.chainJumps); }   // máx. ~16 cadenas/seg
     const ls = s.lifesteal + (P.ultT > 0 && P.cls === 'guerrero' ? 0.05 : 0);
     if (ls > 0) heal(Math.min(d * ls, 6));
   }
@@ -412,7 +416,7 @@ function killEnemy(e) {
   if (Math.random() < 0.07 * luck) S.picks.push({ k: 'soul', x: e.x + rnd(-6, 6), y: e.y + rnd(-6, 6), v: e.elite ? 6 : 1 });
   if (Math.random() < 0.0025 * luck) S.picks.push({ k: 'magnet', x: e.x, y: e.y });
   if (e.guardian) { for (let i = 0; i < 8; i++) S.picks.push({ k: 'soul', x: e.x + rnd(-40, 40), y: e.y + rnd(-40, 40), v: 2 }); }
-  else if (e.elite) { S.picks.push({ k: 'chest', x: e.x, y: e.y, tier: 1 }); banner('¡Élite derrotado!', 'Recoge el cofre', 1.5, '#ffd43b'); }
+  else if (e.elite && (!e.randomElite || Math.random() < 0.35)) { const sp = safeSpot(e.x, e.y); S.picks.push({ k: 'chest', x: sp.x, y: sp.y, tier: 1 }); banner('¡Élite derrotado!', 'Recoge el cofre', 1.5, '#ffd43b'); }
   // escuelas
   const sc = P.schools;
   if (sc.fuego >= 6 && e.burnT > 0) S.booms.push({ x: e.x, y: e.y, r: 70 * P.s.area, d: (15 + P.lvl * 2.5) * P.s.dmg * (1 + P.s.burnBonus * 0.5), src: 'fuego' });   // escala con el jugador, no con el enemigo (evita reacciones en cadena infinitas)
@@ -438,7 +442,12 @@ function comboMilestone(n) {
   banner(`🔥 ¡Racha x${n}!`, rw[0], 2, '#ff9a3a');
   AU.sfx('tier');
 }
-function comboMul() { return 1 + Math.min(S.combo, 50) * 0.005; }   // máximo +25%
+function comboMul() { return 1 + Math.min(S.combo, 30) * 0.005; }   // máximo +15%
+// Los voladores (el Liche, murciélagos…) pueden morir sobre un muro: el cofre se mueve al suelo más cercano
+function safeSpot(x, y) {
+  if (!isWall(x, y) && MAP.flow[tIdx(x, y)] >= 0) return { x, y };
+  return randomFloorAround(x, y, 40, 260, 40) || randomFloorAround(P.x, P.y, 40, 160, 40) || { x: P.x, y: P.y };
+}
 function dropGem(x, y, v) {
   v *= S.L.xp * S.mods.xp;
   S.gems.push({ x: x + rnd(-5, 5), y: y + rnd(-5, 5), v, mag: false, sp: 0, life: 40 });   // si no la recoges en 40s, se desvanece
@@ -487,7 +496,8 @@ function updatePlayer(dt) {
   P.face = Math.cos(P.aim) >= 0 ? 0 : 1;
 
   SRC = 'prim';
-  P.iframes -= dt; P.hurtFlash -= dt; P.secT -= dt; P.powerT -= dt;
+  P.iframes -= dt; P.hurtFlash -= dt; P.secT -= dt; P.powerT -= dt; P.perfectT = (P.perfectT || 0) - dt; P.perfectCd = (P.perfectCd || 0) - dt;
+  if (P.s.singular) { P.singT = (P.singT || 12) - dt; if (P.singT <= 0) { P.singT = 12; for (const g of S.gems) g.mag = true; ring(P.x, P.y, 10, 300, 0.5, '#7a5aff', 6); } }
   if (P.ultT > 0) { P.ultT -= dt; ultTick(dt); }
   if (P.dashCh < s.dashes) { P.dashRe += dt; if (P.dashRe >= dashCd()) { P.dashRe = 0; P.dashCh++; } }
 
@@ -715,8 +725,20 @@ function doDash() {
   let dx = P.mx, dy = P.my;
   if (!dx && !dy) { dx = Math.cos(P.aim); dy = Math.sin(P.aim); }
   const sp = 1300;
-  P.dvx = dx * sp; P.dvy = dy * sp; P.dashT = 0.15; P.dashId++; P.iframes = Math.max(P.iframes, 0.3);
+  P.dvx = dx * sp; P.dvy = dy * sp; P.dashT = 0.15; P.dashId++; P.iframes = Math.max(P.iframes, 0.45);
   AU.sfx('dash');
+  // Esquiva perfecta: si había una bala o un enemigo encima justo al hacer dash
+  let close = S.eproj.some(b => (b.x - P.x) ** 2 + (b.y - P.y) ** 2 < 85 * 85);
+  if (!close) for (const e of S.enemies) if (!e.dead && (e.x - P.x) ** 2 + (e.y - P.y) ** 2 < (e.r + P.r + 26) ** 2) { close = true; break; }
+  if (close && P.perfectCd <= 0) {
+    P.perfectCd = 1.2; P.perfectT = 3; P.iframes = Math.max(P.iframes, 0.8);
+    P.dashCh = Math.min(P.s.dashes, P.dashCh + 1);       // te devuelve la carga
+    S.slowmo = Math.max(S.slowmo, 0.35);
+    txt(P.x, P.y - 40, '¡Esquiva perfecta!', '#8ff3ff', 18);
+    ring(P.x, P.y, 10, 140, 0.35, '#8ff3ff', 5);
+    aoe(P.x, P.y, 120 * P.s.area, 20 + P.lvl * 3, { kb: 500, noProc: true, src: 'dash', col: '#8ff3ff' });   // onda de choque que escala con el nivel
+    AU.sfx('tier');
+  }
   if (P.schools.sombra >= 9) P.critCharges = 3;
   if (P.schools.tormenta >= 6) {
     for (const e of nearest(P.x, P.y, 4, 320)) { bolt(P.x, P.y, e.x, e.y); hitEnemy(e, 30, { col: '#ffe14a', src: 'tormenta' }); }
@@ -900,11 +922,12 @@ function eShoot(x, y, a, spd, dmg, col, r) {
 function spawnEnemy(type, x, y, elite) {
   const d = ENEMIES[type];
   const tm = S.endless ? 1 : 1 + S.t / 60 * 0.45, pr = S.press || 0;
-  const hp = d.hp * S.L.hp * tm * S.mods.hp * (1 + pr * 0.6) * (elite ? 9 : 1);
+  const ls = lvlScale();
+  const hp = d.hp * S.L.hp * tm * S.mods.hp * ls * (1 + pr * 0.6) * (elite ? 9 : 1);
   const e = {
     id: S.nextId++, type, def: d, x, y, r: d.r * (elite ? 1.4 : 1), hp, maxHp: hp,
-    spd: d.spd * rnd(0.9, 1.1), dmg: d.dmg * S.L.dmg * S.mods.dmg * (S.endless ? 1 : 1 + S.t / LEVEL_TIME * 0.3) * (1 + pr * 0.25) * (elite ? 1.5 : 1),
-    xp: d.xp * (elite ? 15 : 1) / (1 + pr * 0.5), sc: d.sc * (elite ? 1.4 : 1), spr: getSpr(d.spr, d.pal, elite), elite: !!elite,
+    spd: d.spd * rnd(0.9, 1.1), dmg: d.dmg * S.L.dmg * S.mods.dmg * (S.endless ? 1 : 1 + S.t / LEVEL_TIME * 0.3) * (1 + pr * 0.25) * (1 + (ls - 1) * 0.5) * (elite ? 1.5 : 1),
+    xp: d.xp * (elite ? 15 : 1) / (1 + pr * 0.5) / (1 + P.lvl * 0.012) / (1 + (S.asc || 0) * 0.15),    sc: d.sc * (elite ? 1.4 : 1), spr: getSpr(d.spr, d.pal, elite), elite: !!elite,
     kvx: 0, kvy: 0, flash: 0, slowT: 0, slowAmt: 0, freezeT: 0, burnT: 0, burnDps: 0, burnTick: 0.5,
     t: rnd(0.5, 2), st: 'move', face: 0, wob: Math.random() * TAU, dead: false, z: 0,
   };
@@ -925,17 +948,23 @@ function spawnRandomAround(type, elite) {
   return null;
 }
 
+function lvlScale() { return 1 + Math.max(0, P.lvl - 10) * 0.04; }   // el Abismo crece contigo
 function director(dt) {
   const L = S.L, t = S.t;
   const maxE = LOWQ() ? 230 : 380;
   if (S.phase === 'waves') {
-    const base = S.endless ? Math.min(13, 1.4 + t * 0.022 + (t / 150) ** 2 * 0.4) : 1.0 + t * 0.05 + (t / 60) ** 2 * 0.6;
-    const rate = base * L.rate * S.mods.spawn * (1 + S.press * 0.8);
+    const base = S.endless ? Math.min(15 + S.asc * 2, 1.4 + t * 0.022 + (t / 150) ** 2 * 0.4) : 1.0 + t * 0.05 + (t / 60) ** 2 * 0.6;
+    const rate = base * L.rate * S.mods.spawn * (1 + S.press * 0.8) * (1 + P.lvl * 0.012);   // más monstruos a más nivel
     S.spawnAcc += rate * dt;
     const avail = L.spawns.filter(s => t >= s.t);
     while (S.spawnAcc >= 1) {
       S.spawnAcc--;
-      if (S.enemies.length < maxE) spawnRandomAround(wpick(avail, s => s.w).e);
+      if (S.enemies.length >= maxE) continue;
+      // tras una ascensión, las hordas del infinito mezclan enemigos de los 3 biomas
+      const list = S.endless && S.asc > 0 && Math.random() < 0.3 ? pick(LEVELS).spawns.filter(s => t >= s.t) : avail;
+      const eliteCh = 0.001 + P.lvl * 0.0001 + (S.asc || 0) * 0.002;
+      const e = spawnRandomAround(wpick(list.length ? list : avail, s => s.w).e, Math.random() < eliteCh);
+      if (e && e.elite) e.randomElite = true;
     }
     const ev = L.events[S.evIdx];
     if (ev && t >= ev.t) {
@@ -979,7 +1008,7 @@ function endlessTick(dt) {
   S.threat = thr + 1;
   S.L.hp = Math.pow(1.1, t / 30) * (1 + t / 120);
   S.L.dmg = Math.pow(1.06, t / 30);
-  S.L.xp = 1 + t / 240;
+  S.L.xp = 1 + t / 420;
   S.lvlIdx = Math.min(2, Math.floor(t / 240));
   const b = bioAt(P.x, P.y);
   if (b !== S.curBio) {
@@ -1194,7 +1223,7 @@ function updateBoss(b, dt) {
     }
   } else if (b.bid === 'lich') {
     if (b.st === 'move') {
-      const want = 300, k = d > want + 40 ? 1 : d < want - 40 ? -1 : 0;
+      const want = 200, k = d > want + 40 ? 1 : d < want - 60 ? -0.6 : 0;   // cerca suficiente para que el cuerpo a cuerpo pueda alcanzarlo
       b.ang += dt * 0.8;
       b.x += (nx * k - ny * 0.6) * b.spd * sl * dt; b.y += (ny * k + nx * 0.6) * b.spd * sl * dt;
       if (b.t <= 0) { b.st = pick(['spiral', 'spiral', 'summon', 'zones', 'tele']); b.t = { spiral: 3, summon: 0.6, zones: 0.5, tele: 0.5 }[b.st]; b.acc = 0; }
@@ -1268,7 +1297,7 @@ function updateBoss(b, dt) {
       if (b.t <= 0) { for (let i = 0; i < 6; i++) spawnEnemy('imp', b.x + rnd(-80, 80), b.y + rnd(-80, 80)); b.st = 'move'; b.t = 1.2; }
     }
   }
-  if (b.bid !== 'lich' && b.st !== 'dash' && b.st !== 'jump') { collideProps(b); collideWalls(b); }
+  if (b.st !== 'dash' && b.st !== 'jump' && b.st !== 'tele') { collideProps(b); collideWalls(b); }
   b.x = clamp(b.x, 60, WORLD - 60); b.y = clamp(b.y, 60, WORLD - 60);
   if (b.z < 30 && !b.untarget) {
     const rr = b.r * 0.8 + P.r;
@@ -1278,13 +1307,18 @@ function updateBoss(b, dt) {
 
 function bossDefeated(b) {
   S.boss = null; S.phase = S.endless ? 'waves' : 'cleared'; S.slowmo = 1.4; S.cleared++;
-  if (S.endless) { S.bossN++; S.nextBoss = 180; }
+  if (S.endless) {
+    S.bossN++; S.nextBoss = 180; S.asc = (S.asc || 0) + 1;
+    S.mods.spawn *= 1.15; S.mods.hp *= 1.12; P.rerolls++;
+    setTimeout(() => banner('🜂 Ascensión ' + S.asc, 'Más enemigos, más élites y hordas mezcladas · +1 re-tirada', 3, '#ff9a3a'), 2500);
+  }
   shake(20); AU.sfx('boom');
   for (let i = 0; i < 4; i++) ring(b.x, b.y, 10, 200 + i * 90, 0.6 + i * 0.2, ['#fff', '#ffd43b', '#ff8a2a', '#ff4a4a'][i], 8);
   part(b.x, b.y, '#ffd43b', 60, 500, 1.2, 5);
   for (const e of S.enemies) if (!e.dead && !e.boss) { e.dead = true; part(e.x, e.y, e.def.blood || '#fff', 3, 120, 0.4, 3); }
   S.eproj.length = 0;
-  S.picks.push({ k: 'chest', x: b.x, y: b.y, tier: 3 });
+  const cs = safeSpot(b.x, b.y);
+  S.picks.push({ k: 'chest', x: cs.x, y: cs.y, tier: 3 });
   for (let i = 0; i < 12; i++) S.picks.push({ k: 'soul', x: b.x + rnd(-80, 80), y: b.y + rnd(-80, 80), v: 3 + S.lvlIdx * 2 });
   for (let i = 0; i < 8; i++) dropGem(b.x + rnd(-90, 90), b.y + rnd(-90, 90), 20);
   const pp = randomFloorAround(b.x, b.y, 120, 200, 30) || { x: b.x, y: b.y };
@@ -1323,7 +1357,7 @@ function updatePickups(dt) {
       if (p.k === 'heart') { heal(P.s.maxHp * 0.25); AU.sfx('pick'); ring(P.x, P.y, 5, 50, 0.3, '#5bff8a'); }
       else if (p.k === 'soul') { const v = p.v * P.s.souls * S.mods.soul * (P.inZone === 'maldita' ? 1.6 : 1); S.souls += v; S.soulsEarned += v; AU.sfx('gem'); }
       else if (p.k === 'magnet') { for (const g of S.gems) g.mag = true; AU.sfx('pick'); banner('🧲 ¡Imán!', '', 1); }
-      else if (p.k === 'chest') { AU.sfx('chest'); UI.openLevelUp(p.tier === 3 ? 'boss' : 'chest'); }
+      else if (p.k === 'chest') { AU.sfx('chest'); UI.openLevelUp(p.tier === 3 ? 'boss' : p.tier === 2 ? 'puzzle' : 'chest'); }
     }
   }
   compact(S.picks, p => !p.done);
@@ -1338,7 +1372,11 @@ function updatePickups(dt) {
   if (S.portal) {
     S.portal.t += dt;
     const dx = P.x - S.portal.x, dy = P.y - S.portal.y;
-    if (dx * dx + dy * dy < 50 * 50 && !S.picks.some(p => p.k === 'chest' && p.tier === 3) && mode === 'play') enterPortal();
+    if (dx * dx + dy * dy < 50 * 50 && mode === 'play') {
+      const bc = S.picks.find(p => p.k === 'chest' && p.tier === 3);
+      if (bc) { bc.x = P.x; bc.y = P.y; }   // se recoge en el siguiente fotograma y luego se cruza
+      else enterPortal();
+    }
   }
 }
 function activateShrine(sh) {
@@ -1366,10 +1404,11 @@ function activateShrine(sh) {
   }
 }
 function gainXp(v) {
-  P.xp += v * P.s.xp * comboMul() * (P.inZone === 'maldita' ? 1.35 : 1);
+  P.xp += v * P.s.xp * comboMul() * (P.inZone === 'maldita' ? 1.2 : 1);
   while (P.xp >= P.xpNext) {
     P.xp -= P.xpNext; P.lvl++; P.xpNext = xpNeed(P.lvl);
     S.pendingLv++;
+    if (P.lvl % 10 === 0) { banner('⚠ El Abismo se fortalece', 'Nivel ' + P.lvl + ': los enemigos son más duros y numerosos', 2.4, '#ff6a5a'); AU.sfx('boss'); }
   }
 }
 
@@ -1489,6 +1528,7 @@ function frame(now) {
 }
 function update(dt) {
   touchUpdate();
+  S.chainT = (S.chainT || 0) - dt;
   S.t += dt; S.time += dt; S.runTime += dt;
   if (S.timeSlow > 0) S.timeSlow -= dt;
   if (S.comboT > 0) { S.comboT -= dt; if (S.comboT <= 0) S.combo = 0; }
@@ -1558,6 +1598,7 @@ function render() {
 
   drawTerrain(x0, y0, x1, y1);
   drawTrapsZones(vis);
+  drawPuzzles(vis);
   // zonas y advertencias (capa de suelo)
   for (const f of S.fx) {
     if (f.k === 'smoke') {
@@ -1884,13 +1925,14 @@ function drawHUD() {
   }
   // buffs activos
   let by2 = T ? 200 : 140;
+  if (P.perfectT > 0) { hudText('✦ ESQUIVA PERFECTA +25% daño ' + Math.ceil(P.perfectT) + 's', 14, by2, 11, '#8ff3ff'); by2 += 16; }
   if (P.powerT > 0) { hudText('⚔ PODER ' + Math.ceil(P.powerT) + 's', 14, by2, 11, '#ff7a5a'); by2 += 16; }
   if (S.timeSlow > 0) { hudText('⏳ TIEMPO LENTO ' + Math.ceil(S.timeSlow) + 's', 14, by2, 11, '#c9d6ff'); by2 += 16; }
   // temporizador / jefe
   if (S.endless && !S.boss) {
     const tt = Math.floor(S.t);
     hudText(`${Math.floor(tt / 60)}:${String(tt % 60).padStart(2, '0')}`, W / 2, 40, 26, '#fff', 'center');
-    hudText('∞ AMENAZA ' + S.threat + ' · jefe en ' + Math.ceil(S.nextBoss) + 's', W / 2, 60, 11, '#ffb070', 'center');
+    hudText('∞ AMENAZA ' + S.threat + (S.asc ? ' · ASCENSIÓN ' + S.asc : '') + ' · jefe en ' + Math.ceil(S.nextBoss) + 's', W / 2, 60, 11, '#ffb070', 'center');
   } else if (S.phase === 'waves') {
     const rem = Math.max(0, LEVEL_TIME - S.t);
     hudText(`${Math.floor(rem / 60)}:${String(Math.floor(rem % 60)).padStart(2, '0')}`, W / 2, 40, 26, rem < 15 ? '#ff6a5a' : '#fff', 'center');
@@ -2000,6 +2042,7 @@ function drawMinimap() {
   ctx.fillStyle = 'rgba(255,90,90,0.75)';
   for (const e of S.enemies) if ((e.x - P.x) ** 2 + (e.y - P.y) ** 2 < 900 * 900) ctx.fillRect(x0 + e.x * k - 1, y0 + e.y * k - 1, 2, 2);
   for (const z of MAP.zones) if (revealedAt(z.x, z.y)) { ctx.strokeStyle = ZONES[z.type].c; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(x0 + z.x * k, y0 + z.y * k, z.r * k, 0, TAU); ctx.stroke(); }
+  for (const pz of MAP.puzzles) if (!pz.solved && revealedAt(pz.x, pz.y)) { ctx.fillStyle = '#5bffd0'; ctx.fillRect(x0 + pz.x * k - 3, y0 + pz.y * k - 3, 6, 6); ctx.fillStyle = '#000'; ctx.fillRect(x0 + pz.x * k - 1, y0 + pz.y * k - 1, 2, 2); }
   for (const sh of S.shrines) if (revealedAt(sh.x, sh.y)) { ctx.fillStyle = sh.used ? '#4a4458' : SHRINES[sh.type].c; ctx.fillRect(x0 + sh.x * k - 3, y0 + sh.y * k - 3, 6, 6); }
   for (const e of S.enemies) if (e.elite && revealedAt(e.x, e.y)) { ctx.fillStyle = '#ffb020'; ctx.fillRect(x0 + e.x * k - 2, y0 + e.y * k - 2, 5, 5); }
   for (const p of S.picks) if (p.k === 'chest' && revealedAt(p.x, p.y)) { ctx.fillStyle = '#ffd43b'; ctx.fillRect(x0 + p.x * k - 3, y0 + p.y * k - 3, 6, 6); }
