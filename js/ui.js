@@ -6,6 +6,7 @@
 
 const $ = id => document.getElementById(id);
 const show = id => $(id).classList.remove('hidden');
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const hide = id => $(id).classList.add('hidden');
 
 const UI = {
@@ -15,26 +16,24 @@ const UI = {
 
   // ------------------------------------------------ MENÚ
   buildMenu() {
+    // héroes: cuadrícula compacta + ficha del elegido (también se pueden ver los bloqueados para comprarlos)
     const box = $('classes'); box.innerHTML = '';
+    if (!CLASSES[this.cls]) this.cls = 'guerrero';
     for (const [id, C] of Object.entries(CLASSES)) {
+      const owned = classOwned(id), SC = SCHOOLS[C.school];
       const d = document.createElement('div');
-      d.className = 'cls' + (id === this.cls ? ' sel' : '');
+      d.className = 'cls' + (id === this.cls ? ' sel' : '') + (owned ? '' : ' lockd');
       const cvs = document.createElement('canvas'); cvs.width = 96; cvs.height = 96;
-      const x = cvs.getContext('2d'); x.imageSmoothingEnabled = false;
       drawPortrait(cvs, id);
       d.appendChild(cvs);
-      const SC = SCHOOLS[C.school], cu = heroCustom(id);
-      d.insertAdjacentHTML('beforeend', `<h3>${C.n}</h3><p class="d">${C.desc}</p>
-        <ul><li><b>Clic izq:</b> ${C.prims[cu.prim].n}</li><li><b>Clic der / E:</b> ${C.secs[cu.sec].n}</li><li><b>Q:</b> ${C.ult.n}</li></ul>
-        <div class="st">❤ ${C.hp} · 👟 ${C.spd} · 🛡 ${C.armor} · ${SC.ic} ${SC.n} +1</div>
-        <button class="custBtn">🎨 Personalizar</button>`);
+      d.insertAdjacentHTML('beforeend', `<h3>${esc(heroName(id))}</h3><small>${owned ? (SC ? SC.ic + ' ' + SC.n : '🌀 Libre') : '🔒 ✦' + C.cost}</small>`);
       d.onclick = () => { this.cls = id; AU.init(); AU.sfx('ui'); this.buildMenu(); };
-      d.querySelector('.custBtn').onclick = ev => { ev.stopPropagation(); this.cls = id; AU.init(); this.openCustom(); };
       box.appendChild(d);
     }
+    this.buildInfo();
     this.endless = !!SAVE.settings.endless;
     const md = $('modes'); md.innerHTML = '';
-    [[false, '⚔ Campaña', '3 niveles con jefe'], [true, '∞ Hordas infinitas', 'Mapa gigante mixto']].forEach(([v, n, sub]) => {
+    [[false, '⚔ Campaña', LEVELS.length + ' niveles de descenso'], [true, '∞ Hordas infinitas', 'Mapa gigante mixto']].forEach(([v, n, sub]) => {
       const b = document.createElement('button');
       b.className = 'lv' + (this.endless === v ? ' sel' : '');
       b.innerHTML = `${n}<small>${sub}</small>`;
@@ -46,7 +45,7 @@ const UI = {
     for (const [k, D] of Object.entries(DIFFS)) {
       const b = document.createElement('button');
       b.className = 'lv dif' + (D.tryhard ? ' th' : '') + (cur === k ? ' sel' : '');
-      b.innerHTML = `${D.ic} ${D.n}<small>${D.d}<br>🎁 cofre de élite ${Math.round(D.chest * 100)}%</small>`;
+      b.innerHTML = `${D.ic} ${D.n}<small>${D.d}<br>🎁 élite ${Math.round(D.chest * 100)}% · ✦ ${D.shrines} santuarios · ⏰ jefe ${D.bossT}s</small>`;
       b.onclick = () => { SAVE.settings.diff = k; persist(); AU.init(); AU.sfx('ui'); this.buildMenu(); };
       df.appendChild(b);
     }
@@ -55,13 +54,37 @@ const UI = {
     LEVELS.forEach((L, i) => {
       const b = document.createElement('button');
       b.className = 'lv' + (i === this.start ? ' sel' : '');
-      b.innerHTML = `<b>${i + 1}</b> ${L.n}<small>${i === 0 ? 'Partida normal' : 'Prueba: empiezas con ' + (i === 1 ? 9 : 19) + ' niveles'}</small>`;
+      b.innerHTML = `<b>${i + 1}</b> ${L.n}<small>${i === 0 ? 'Partida normal' : 'Prueba: empiezas con ' + L.testLv + ' niveles'}</small>`;
       b.onclick = () => { this.start = i; AU.init(); AU.sfx('ui'); this.buildMenu(); };
       lv.appendChild(b);
     });
     $('souls').textContent = Math.floor(SAVE.souls);
+    const tn = TREE.filter(t => SAVE.unlocked['tree.' + t.id]).length;
+    $('treeBtn').innerHTML = `🌳 Árbol de rutas <small>${tn}/${TREE.length}</small>`;
     const be = SAVE.bestEndless || 0;
     $('record').textContent = `Récord de bajas: ${SAVE.best || 0} · Victorias: ${SAVE.wins || 0} · Mejor tiempo infinito: ${Math.floor(be / 60)}:${String(be % 60).padStart(2, '0')}`;
+  },
+  buildInfo() {
+    const id = this.cls, C = CLASSES[id], cu = heroCustom(id), owned = classOwned(id), SC = SCHOOLS[C.school];
+    const secOk = i => !C.secs[i].cost || SAVE.unlocked['abil.' + id + '.sec.' + i];
+    const sec = C.secs[cu.sec] && secOk(cu.sec) ? C.secs[cu.sec] : C.secs[0];
+    const v = heroVariant(id), named = !!cu.name;
+    const box = $('clsInfo');
+    box.innerHTML = `<div><h3>${esc(heroName(id))}${named ? ` <small>${esc(v.n)}</small>` : ''}</h3>
+      <p class="d">${C.desc}</p>
+      <ul><li><b>Clic izq:</b> ${(C.prims[cu.prim] || C.prims[0]).n}</li><li><b>Clic der / E:</b> ${sec.n}</li><li><b>Q:</b> ${C.ult.n} — ${C.ult.d}</li></ul>
+      <div class="st">❤ ${C.hp} · 👟 ${C.spd} · 🛡 ${C.armor} · ${SC ? `${SC.ic} ${SC.n} +1${SC.opp ? ` (sella ${SCHOOLS[SC.opp].n})` : ''}` : '🌀 Sin afinidad fija'}</div>
+      ${C.trait ? `<div class="tr">✦ ${C.trait}</div>` : ''}</div>
+      <div class="btns">${owned ? '<button class="custBtn">🎨 Personalizar</button>' : `<button class="custBtn buy"${SAVE.souls < C.cost ? ' disabled' : ''}>🔒 Comprar · ✦${C.cost}</button><small>Tienes ✦${Math.floor(SAVE.souls)}</small>`}</div>`;
+    box.querySelector('.custBtn').onclick = () => {
+      AU.init();
+      if (owned) { this.openCustom(); return; }
+      if (SAVE.souls < C.cost) { AU.sfx('hurt'); return; }
+      SAVE.souls -= C.cost; SAVE.unlocked['class.' + id] = true; persist(); AU.sfx('chest');
+      this.buildMenu();
+    };
+    $('playBtn').disabled = !owned;
+    $('playBtn').textContent = owned ? '▶ JUGAR' : '🔒 Compra este héroe para jugar';
   },
   openMenu() {
     mode = 'menu'; S = null;
@@ -70,6 +93,7 @@ const UI = {
     AU.stopMusic();
   },
   play() {
+    if (!classOwned(this.cls)) { AU.sfx('hurt'); return; }
     AU.init(); AU.sfx('ui');
     goFullscreenLandscape();
     hide('menu');
@@ -79,10 +103,36 @@ const UI = {
   // ------------------------------------------------ PERSONALIZACIÓN (cosmética + habilidades iniciales)
   openCustom() {
     const id = this.cls, C = CLASSES[id], cu = heroCustom(id);
-    $('custTitle').textContent = '🎨 ' + C.n;
+    $('custTitle').textContent = '🎨 ' + heroVariant(id).n;
     $('custEss').textContent = Math.floor(SAVE.souls);
     drawPortrait($('custPrev'), id);
     const box = $('custBody'); box.innerHTML = '';
+    // nombre del héroe
+    const nr = document.createElement('div'); nr.className = 'slot';
+    nr.innerHTML = '<div class="label">Nombre</div>';
+    const inp = document.createElement('input');
+    inp.type = 'text'; inp.maxLength = 14; inp.className = 'nameIn'; inp.placeholder = heroVariant(id).n; inp.value = cu.name || '';
+    inp.oninput = () => { cu.name = cleanName(inp.value); persist(); $('custTitle').textContent = '🎨 ' + heroName(id); };
+    inp.onkeydown = ev => ev.stopPropagation();          // que Enter/teclas no lancen la partida
+    inp.onchange = () => { inp.value = cu.name || ''; this.buildMenu(); };
+    nr.appendChild(inp); box.appendChild(nr);
+    // variante (Mago / Maga…)
+    if (C.variants && C.variants.length > 1) {
+      const vr = document.createElement('div'); vr.className = 'slot';
+      vr.innerHTML = '<div class="label">Variante</div>';
+      const sw = document.createElement('div'); sw.className = 'sw';
+      for (const v of C.variants) {
+        const b = document.createElement('button');
+        b.className = 'swatch var' + (cu.var === v.id ? ' sel' : '');
+        const pc = document.createElement('canvas'); pc.width = 48; pc.height = 48;
+        const sp = getSpr(v.spr || C.spr, heroPal(id)), x = pc.getContext('2d'); x.imageSmoothingEnabled = false;
+        const k = Math.floor(44 / Math.max(sp.w, sp.h)); x.drawImage(sp.c[0], (48 - sp.w * k) / 2, (48 - sp.h * k) / 2, sp.w * k, sp.h * k);
+        b.appendChild(pc); b.insertAdjacentHTML('beforeend', esc(v.n) + (v.id === 'f' ? ' ♀' : ' ♂'));
+        b.onclick = () => { cu.var = v.id; persist(); AU.sfx('ui'); this.openCustom(); };
+        sw.appendChild(b);
+      }
+      vr.appendChild(sw); box.appendChild(vr);
+    }
     for (const slot of CUSTOM[id]) {
       const row = document.createElement('div'); row.className = 'slot';
       row.innerHTML = `<div class="label">${slot.n}</div>`;
@@ -108,16 +158,56 @@ const UI = {
       row.innerHTML = `<div class="label">${label}</div>`;
       const sw = document.createElement('div'); sw.className = 'abil';
       list.forEach((a, i) => {
+        const key = 'abil.' + id + '.' + kind + '.' + i, locked = a.cost && !SAVE.unlocked[key];
         const b = document.createElement('button');
-        b.className = 'ab' + (cu[kind] === i ? ' sel' : '');
-        b.innerHTML = `<b>${a.n}</b><small>${a.d}${a.cd ? ' · ' + a.cd + 's' : ''}</small>`;
-        b.onclick = () => { cu[kind] = i; persist(); AU.sfx('ui'); this.openCustom(); };
+        b.className = 'ab' + (cu[kind] === i && !locked ? ' sel' : '') + (locked ? ' lock' : '');
+        b.innerHTML = `<b>${locked ? '🔒 ' : ''}${a.n}</b><small>${a.d}${a.cd ? ' · ' + a.cd + 's' : ''}${locked ? ` · <span class="souls">✦${a.cost}</span> (o encuentra su tomo)` : ''}</small>`;
+        b.onclick = () => {
+          if (locked) {
+            if (SAVE.souls < a.cost) { AU.sfx('hurt'); return; }
+            SAVE.souls -= a.cost; SAVE.unlocked[key] = true; AU.sfx('chest');
+          } else AU.sfx('ui');
+          cu[kind] = i; persist(); this.openCustom();
+        };
         sw.appendChild(b);
       });
       row.appendChild(sw); box.appendChild(row);
     }
     show('custom');
     this.buildMenu();
+  },
+
+  // ------------------------------------------------ ÁRBOL DE RUTAS
+  openTree() {
+    const own = id => !!SAVE.unlocked['tree.' + id];
+    $('treeEss').textContent = Math.floor(SAVE.souls);
+    const box = $('treeBody'); box.innerHTML = '';
+    for (const [rk, R] of Object.entries(ROUTES)) {
+      const col = document.createElement('div'); col.className = 'route'; col.style.setProperty('--rc', R.c);
+      col.innerHTML = `<h3>${R.ic} ${R.n}</h3>`;
+      for (let tier = 1; tier <= 4; tier++) {
+        const row = document.createElement('div'); row.className = 'trow';
+        for (const t of TREE.filter(x => x.route === rk && x.tier === tier)) {
+          const reqOk = !t.req.length || t.req.some(own), have = own(t.id);
+          const b = document.createElement('button');
+          b.className = 'node' + (have ? ' own' : t.relic ? ' relic' : reqOk ? ' avail' : ' lock');
+          const need = t.req.map(r => TREE_BY[r].n).join(' o ');
+          const price = have ? '✔ Tuyo' : t.relic ? '🔮 Solo con reliquia' : !reqOk ? '🔒 Requiere ' + need : `✦${t.cost}`;
+          b.innerHTML = `<span class="ic">${t.ic}</span><b>${t.n}</b><small>${t.d}</small><i>${price}</i>`;
+          if (!have && !t.relic && reqOk && SAVE.souls < t.cost) b.classList.add('poor');
+          b.onclick = () => {
+            if (have || t.relic || !reqOk) { AU.sfx('ui'); return; }
+            if (SAVE.souls < t.cost) { AU.sfx('hurt'); return; }
+            SAVE.souls -= t.cost; SAVE.unlocked['tree.' + t.id] = true; persist(); AU.sfx('chest');
+            this.openTree(); this.buildMenu();
+          };
+          row.appendChild(b);
+        }
+        col.appendChild(row);
+      }
+      box.appendChild(col);
+    }
+    show('tree');
   },
 
   // ------------------------------------------------ OPCIONES
@@ -168,7 +258,7 @@ const UI = {
       const d = document.createElement('div');
       const R = RAR[c.r];
       d.className = 'card'; d.style.setProperty('--rc', R.c);
-      d.innerHTML = `<div class="rar">${c.tag || R.n}</div><div class="ic">${c.ic}</div><h3>${c.n}</h3><p>${c.d}</p>${c.sch ? `<div class="sch" style="color:${SCHOOLS[c.sch].c}">${SCHOOLS[c.sch].ic} ${SCHOOLS[c.sch].n} ${P.schools[c.sch]}→${P.schools[c.sch] + c.pts}${nextTier(c.sch, c.pts)}</div>` : '<div class="sch">Sin escuela</div>'}<kbd>${i + 1}</kbd>`;
+      d.innerHTML = `<div class="rar">${c.tag || R.n}</div><div class="ic">${c.ic}</div><h3>${c.n}</h3><p>${c.d}</p>${c.sch ? `<div class="sch" style="color:${SCHOOLS[c.sch].c}">${SCHOOLS[c.sch].ic} ${SCHOOLS[c.sch].n} ${P.schools[c.sch]}→${P.schools[c.sch] + c.pts}${nextTier(c.sch, c.pts)}${sealWarn(c.sch)}</div>` : '<div class="sch">Sin escuela</div>'}<kbd>${i + 1}</kbd>`;
       d.onclick = () => this.choose(i);
       box.appendChild(d);
     });
@@ -254,13 +344,15 @@ const UI = {
     const t = S.runTime;
     $('overBody').innerHTML = `<div class="ostats">
       <div><b>${S.endless ? 'Amenaza ' + S.threat : S.L.n}</b><small>${S.endless ? 'Hordas infinitas' : 'Llegaste a'}</small></div>
+      <div><b>${esc(P.name || heroVariant(P.cls).n)}</b><small>${esc(heroVariant(P.cls).n)}</small></div>
       <div><b>${S.diff.ic} ${S.diff.n}</b><small>Dificultad</small></div>
       <div><b>${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}</b><small>Tiempo</small></div>
       <div><b>${P.lvl}</b><small>Nivel</small></div>
       <div><b>${S.kills}</b><small>Bajas</small></div>
       <div><b>${Math.round(S.dmgDone).toLocaleString()}</b><small>Daño total</small></div>
       <div><b style="color:#ff9a3a">x${S.bestCombo}</b><small>Mejor racha</small></div>
-      <div><b style="color:#d0a0ff">+${earned} ✦</b><small>Esencia (cosmética)</small></div>
+      <div><b style="color:#d0a0ff">+${earned} ✦</b><small>Esencia</small></div>
+      ${S.relics.length ? `<div><b style="color:#ff9af0">${S.relics.map(id => RELICS.find(r => r.id === id).ic).join(' ')}</b><small>Reliquias</small></div>` : ''}
     </div>` + buildSummary(true);
     show('over');
   },
@@ -278,7 +370,7 @@ const UI = {
       if (c === 'Enter') { hide('over'); startRun(this.cls, this.start, this.endless); }
       if (c === 'Escape') this.openMenu();
     } else if (mode === 'menu') {
-      if (c === 'Enter' && $('custom').classList.contains('hidden') && $('opts').classList.contains('hidden')) this.play();
+      if (c === 'Enter' && $('custom').classList.contains('hidden') && $('opts').classList.contains('hidden') && $('tree').classList.contains('hidden')) this.play();
       if (c === 'Escape') { hide('custom'); hide('opts'); hide('help'); }
     }
   },
@@ -287,7 +379,7 @@ const UI = {
 function drawPortrait(cvs, id) {
   const x = cvs.getContext('2d'); x.imageSmoothingEnabled = false;
   x.clearRect(0, 0, cvs.width, cvs.height);
-  const sp = getSpr(CLASSES[id].spr, heroPal(id)), sc = Math.floor(cvs.width * 0.94 / Math.max(sp.w, sp.h));
+  const sp = getSpr(heroSpr(id), heroPal(id)), sc = Math.floor(cvs.width * 0.94 / Math.max(sp.w, sp.h));
   x.drawImage(sp.c[0], (cvs.width - sp.w * sc) / 2, (cvs.height - sp.h * sc) / 2, sp.w * sc, sp.h * sc);
 }
 function nextTier(sch, pts) {
@@ -303,7 +395,7 @@ function nextTier(sch, pts) {
 function srcName(k) {
   const C = P.C;
   const m = { prim: C.prim.n, sec: C.sec.n, ult: C.ult.n, burn: 'Quemaduras', chain: 'Rayos en cadena', fuego: 'Explosiones ígneas', hielo: 'Esquirlas de hielo',
-    tormenta: 'Tormenta', sangre: 'Nova de sangre', espinas: 'Espinas', trampas: 'Trampas (enemigos atraídos)', terreno: 'Terreno dañino', piroclasto: 'Piroclasto', fantasma: 'Paso Fantasma', hemomancia: 'Hemomancia', fenix: 'Fénix', dash: 'Esquiva perfecta' };
+    tormenta: 'Rayos del cielo', sangre: 'Nova de sangre', aliados: 'Esqueletos aliados', tierra: 'Terremoto y pilares', grieta: 'Grietas de barro', viento: 'Ráfagas y tornado', luz: 'Juicio de luz', espinas: 'Espinas', trampas: 'Trampas (enemigos atraídos)', terreno: 'Terreno dañino', piroclasto: 'Piroclasto', fantasma: 'Paso Fantasma', hemomancia: 'Hemomancia', fenix: 'Fénix', dash: 'Esquiva perfecta' };
   return m[k] || (WEAPONS[k] ? WEAPONS[k].ic + ' ' + WEAPONS[k].n : k);
 }
 function dmgBreakdown() {
@@ -328,9 +420,15 @@ function rollRarity(minR) {
   return 3;
 }
 // ¿Sirve esta mejora ahora? Oculta las que ya llegaron a su tope real o no combinan con tu build.
+// la carta que despierta una afinidad con opuesto avisa de lo que se va a sellar
+function sealWarn(sch) {
+  const opp = SCHOOLS[sch].opp;
+  if (!opp || P.schools[sch] > 0 || P.locked[opp]) return '';
+  return ` <b style="color:#ff8a6a">· ⚠ Sella ${SCHOOLS[opp].ic} ${SCHOOLS[opp].n}</b>`;
+}
 function upgradeUseful(u) {
   const s = P.s, b = P.b, has = id => P.weapons.some(w => w.id === id);
-  const shoots = P.cls !== 'guerrero' || s.proj > 0 || has('dagas') || has('craneos');
+  const shoots = !P.C.melee || s.proj > 0 || has('dagas') || has('craneos') || has('cuchillas');
   switch (u.id) {
     case 'evasion': return s.dodge < 0.6;
     case 'celer': return s.cdr < 0.65;
@@ -348,20 +446,24 @@ function upgradeUseful(u) {
     case 'corazon': case 'pirom': return s.burnCh > 0 || has('orbes');   // necesitan algo que queme
     case 'conductor': return s.chainCh > 0 || has('rayos');              // necesitan rayos en cadena
     case 'singularidad': return (P.ups.iman || 0) >= 3;
+    case 'grieta': return s.quakeCh < 0.6;
+    case 'resplandor': return s.blindCh < 0.5;
+    case 'pluma': return s.dashCdr < 0.5;
     case 'condensador': return s.shield > 0;                            // sin escudo no sirve
-    case 'barrera': return s.shield < 0.8;
+    case 'barrera': return !P.C.noShield && s.shield < 0.8;
   }
   return true;
 }
 function genChoices(n, minR, bossChest) {
   const cand = [];
   for (const u of UPGRADES) {
-    if ((P.ups[u.id] || 0) >= u.max || !upgradeUseful(u)) continue;
+    if ((P.ups[u.id] || 0) >= u.max || !upgradeUseful(u) || (u.sch && P.locked[u.sch]) || (u.sch && P.C.pool && !P.C.pool.includes(u.sch))) continue;
     let w = 10;
     if (u.sch) w *= 1 + P.schools[u.sch] * 0.18; // sesgo hacia tu especialización
     cand.push({ kind: 'up', u, w });
   }
   for (const [id, wd] of Object.entries(WEAPONS)) {
+    if (P.locked[wd.sch] || (P.C.pool && !P.C.pool.includes(wd.sch))) continue;   // afinidad sellada o fuera de la clase
     const own = P.weapons.find(w => w.id === id);
     if (!own && P.weapons.length < 4) cand.push({ kind: 'wnew', id, wd, w: 9 + P.schools[wd.sch] * 2 });
     if (own && own.lvl < 5) cand.push({ kind: 'wup', id, wd, own, w: 16 });
@@ -429,6 +531,7 @@ function buildSummary(compact) {
   h += '<div class="col"><h4>Escuelas</h4>';
   for (const k of SCHOOL_KEYS) {
     const v = P.schools[k], SC = SCHOOLS[k];
+    if (P.locked[k]) { h += `<div class="schrow locked"><span>🔒 ${SC.n}</span><i></i><b>—</b></div><div class="tier">Sellada por ${SCHOOLS[P.locked[k]].ic} ${SCHOOLS[P.locked[k]].n}</div>`; continue; }
     h += `<div class="schrow" style="--sc:${SC.c}"><span>${SC.ic} ${SC.n}</span><i style="width:${Math.min(100, v / 9 * 100)}%"></i><b>${v}</b></div>`;
     SC.tiers.forEach((t, i) => { if (v >= (i + 1) * 3) h += `<div class="tier">✔ ${['I', 'II', 'III'][i]}: ${t}</div>`; });
   }
@@ -451,6 +554,7 @@ function buildSummary(compact) {
 window.addEventListener('load', () => {
   $('playBtn').onclick = () => UI.play();
   $('altarBtn').onclick = () => { AU.init(); UI.openCustom(); };
+  $('treeBtn').onclick = () => { AU.init(); UI.openTree(); };
   $('optsBtn').onclick = () => { AU.init(); UI.openOpts(); };
   $('helpBtn').onclick = () => show('help');
   $('stats').onclick = () => { keys.Tab = false; hide('stats'); };   // en móvil se cierra tocándola

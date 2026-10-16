@@ -10,13 +10,15 @@
 
 const TILE = 80;
 let MAPN = 64;                                  // baldosas por lado (WORLD = TILE * MAPN)
-const TF = 0, TW = 1, TSLOW = 2, THURT = 3, TSLOPE = 4, TICE = 5;
+const TF = 0, TW = 1, TSLOW = 2, THURT = 3, TSLOPE = 4, TICE = 5, TVOID = 6;   // TVOID: grieta al vacío (nivel 5)
 const TRAP_PERIOD = 2.8;
-const BIOME_KEYS = ['forest', 'crypt', 'forge'];   // mismo orden que LEVELS
+const BIOME_KEYS = ['forest', 'crypt', 'forge', 'roots', 'void'];   // mismo orden que LEVELS
 
 const TERRAIN = {
   forest: { top: ['#2c4a26', '#365c2e', '#24401f', '#41693a'], face: ['#1a2a17', '#13200f'], rim: '#5a9a4a', slow: ['Pantano', '#2a3a1c'], hurt: ['Zarzas venenosas', '#8a3a9a', 9], slope: 'Ladera', ice: null, trap: 'spikes', fogc: '#05090a' },
   crypt:  { top: ['#4a5068', '#555c78', '#3e4359', '#626a88'], face: ['#23263a', '#1a1c2b'], rim: '#8a92b8', slow: ['Nieve profunda', '#b8c8e8'], hurt: ['Runas malditas', '#6a3aff', 11], slope: 'Escalinata', ice: 'Hielo resbaladizo', trap: 'frost', fogc: '#04050c' },
+  roots:  { top: ['#22303a', '#2a3a44', '#1a262e', '#334650'], face: ['#121c22', '#0c1418'], rim: '#5ad8c0', slow: ['Agua negra', '#0a1a2a'], hurt: ['Esporas venenosas', '#8ad83a', 14], slope: 'Corriente', ice: null, trap: 'spikes', fogc: '#020808' },
+  void:   { top: ['#2a1a3a', '#321e46', '#22142e', '#3a2450'], face: ['#140a1e', '#0c0614'], rim: '#b066ff', slow: ['Bruma del vacío', '#3a2a5a'], hurt: ['Grieta de energía', '#ff3bd0', 20], slope: 'Corriente del vacío', ice: null, trap: 'void', fogc: '#020004' },
   forge:  { top: ['#4a2a22', '#5a3326', '#3a201a', '#6a3a2a'], face: ['#24120e', '#1a0c09'], rim: '#a0583a', slow: ['Ceniza', '#6a5a52'], hurt: ['Lava', '#ff5a1a', 18], slope: 'Pendiente de escoria', ice: null, trap: 'vent', fogc: '#0a0403' },
 };
 const ZONES = {
@@ -59,7 +61,7 @@ function bfsH(t, h, rp, closed, sx, sy, out) {
   const s = sy * n + sx; if (t[s] === TW) return out;
   out[s] = 0; q[e++] = s;
   const go = (j, d, lo, hi) => {
-    if (t[j] === TW || out[j] >= 0 || (closed && closed[j])) return;
+    if (t[j] === TW || t[j] === TVOID || out[j] >= 0 || (closed && closed[j])) return;
     const jl = h[j]; if (jl > hi || jl + (rp[j] ? 1 : 0) < lo) return;
     out[j] = d; q[e++] = j;
   };
@@ -138,7 +140,7 @@ function genMap(L, endless) {
   if (!endless) bio.fill(Math.max(0, BIOME_KEYS.indexOf(L.biome)));
   else {
     const seeds = [{ x: c, y: c, b: 0 }];
-    const order = [1, 2, 0, 1, 2, 1, 2, 0, 1, 2];
+    const order = [1, 2, 3, 4, 0, 1, 2, 3, 4, 1, 2, 0];   // bosque en el centro; cripta, forja, raíces y vacío alrededor
     for (const b of order) {
       for (let s = 0; s < 30; s++) {
         const x = 6 + Math.random() * (n - 12), y = 6 + Math.random() * (n - 12);
@@ -286,11 +288,11 @@ function genMap(L, endless) {
     if (shrines.some(sh => Math.hypot(sh.x - x, sh.y - y) < 3.2 * TILE) || chests.some(ch => Math.hypot(ch.x - x, ch.y - y) < TILE)) continue;
     if (puzzles.some(pz => Math.hypot(pz.x - x, pz.y - y) < 3.5 * TILE)) continue;
     if (traps.some(tr => Math.hypot(tr.x - x, tr.y - y) < TILE * 0.8)) continue;
-    const [type] = wpick(LEVELS[bio[i]].props, p => p[1]);
-    const sc = { tree: 5, rock: 4, mush: 3.5, tomb: 4, pillar: 4.5, crystal: 4.5, spike: 5 }[type] * rnd(0.85, 1.15);
-    const r = { tree: 16, rock: 20, mush: 10, tomb: 14, pillar: 16, crystal: 13, spike: 18 }[type] * sc / 4.5;
+    const [type, , ppal] = wpick(LEVELS[bio[i]].props, p => p[1]);
+    const sc = { tree: 5, rock: 4, mush: 3.5, tomb: 4, pillar: 4.5, crystal: 4.5, spike: 5, shroom: 5, root: 4.5, obelisk: 4.5 }[type] * rnd(0.85, 1.15);
+    const r = { tree: 16, rock: 20, mush: 10, tomb: 14, pillar: 16, crystal: 13, spike: 18, shroom: 13, root: 20, obelisk: 13 }[type] * sc / 4.5;
     if (props.some(p => (p.x - x) ** 2 + (p.y - y) ** 2 < (p.r + r + 30) ** 2)) continue;
-    props.push({ kind: 'prop', type, x, y, r, sc, spr: getSpr(type), solid: true });
+    props.push({ kind: 'prop', type, x, y, r, sc, spr: getSpr(type, ppal), solid: true, glow: type === 'shroom' ? '#5ad8c0' : type === 'obelisk' ? '#b066ff' : null });
   }
   const decals = [];
   for (let k = 0; k < Math.round(2200 * A); k++) {
@@ -310,7 +312,10 @@ function genMap(L, endless) {
     }
     return false;
   };
-  for (let q = traps.length - 1; q >= 0; q--) if (HG.ramp[traps[q].ty * n + traps[q].tx]) traps.splice(q, 1);
+  if (endless || bio[c * n + c] === 4) genRifts(t, n, HG, sec, secRooms, shrines, puzzles, chests, c, D, endless ? bio : null);
+  for (let q = traps.length - 1; q >= 0; q--) if (HG.ramp[traps[q].ty * n + traps[q].tx] || t[traps[q].ty * n + traps[q].tx] === TVOID) traps.splice(q, 1);
+  for (let q = props.length - 1; q >= 0; q--) if (t[tIdxN(props[q].x, props[q].y, n)] === TVOID) props.splice(q, 1);
+  for (let q = decals.length - 1; q >= 0; q--) if (t[tIdxN(decals[q].x, decals[q].y, n)] === TVOID) decals.splice(q, 1);
   for (let q = props.length - 1; q >= 0; q--) if (nearRamp(props[q].x, props[q].y, props[q].r)) props.splice(q, 1);
   for (const f of HG.feats) if (f.type !== 'meseta') for (let q = props.length - 1; q >= 0; q--) if (Math.hypot(props[q].x - f.x, props[q].y - f.y) < 130) props.splice(q, 1);
 
@@ -324,6 +329,45 @@ function genMap(L, endless) {
   return MAP;
 }
 
+const tIdxN = (x, y, n) => Math.floor(y / TILE) * n + Math.floor(x / TILE);
+// Grietas al vacío: caminos aleatorios de 1-2 baldosas convertidos en vacío. Cada grieta solo se acepta si
+// todo el suelo sigue siendo alcanzable a pie desde el inicio (los enemigos las rodean; el jugador puede saltarlas con dash).
+// onlyBio: en el modo infinito, las grietas solo se abren dentro de las regiones de vacío (bioma 4)
+function genRifts(t, n, HG, sec, secRooms, shrines, puzzles, chests, c, D, onlyBio) {
+  const N = n * n, forbid = new Uint8Array(N), h = HG.h, rp = HG.ramp, tI = v => Math.floor(v / TILE);
+  const mark = (cx, cy, r) => { for (let y = cy - r; y <= cy + r; y++) for (let x = cx - r; x <= cx + r; x++) if (x >= 0 && y >= 0 && x < n && y < n) forbid[y * n + x] = 1; };
+  mark(c, c, 6);
+  for (const sh of shrines) mark(tI(sh.x), tI(sh.y), 3);
+  for (const pz of puzzles) { mark(tI(pz.x), tI(pz.y), 4); if (pz.braz) for (const b of pz.braz) mark(tI(b.x), tI(b.y), 1); }
+  for (const ch of chests) mark(tI(ch.x), tI(ch.y), 1);
+  for (const R of secRooms) { mark(R.fx, R.fy, 1); for (const j of R.tiles) forbid[j] = 1; }
+  for (let j = 0; j < N; j++) if (rp[j] || h[j] !== 1) { const x = j % n, y = (j / n) | 0; mark(x, y, 1); }
+  const reach = new Int32Array(N);
+  const allOk = () => {
+    bfsH(t, h, rp, null, c, c, reach);
+    for (let j = 0; j < N; j++) if (t[j] !== TW && t[j] !== TVOID && reach[j] < 0) return false;
+    return true;
+  };
+  let made = 0;
+  if (onlyBio) for (let j = 0; j < N; j++) if (onlyBio[j] !== 4) forbid[j] = 1;
+  const seeds = []; for (let j = 0; j < N; j++) if (t[j] !== TW && !forbid[j] && D[j] >= 8) seeds.push(j);
+  const want = onlyBio ? Math.round(seeds.length / 190) : 14;          // ~ la misma densidad que en campaña
+  for (let tries = 0; tries < want * 5 && made < want && seeds.length; tries++) {
+    const s0 = pick(seeds);
+    let x = s0 % n, y = (s0 / n) | 0, a = Math.random() * TAU;
+    const len = 6 + ((Math.random() * 10) | 0), wide = Math.random() < 0.4, cut = [];
+    for (let k = 0; k < len; k++) {
+      for (const [ox, oy] of wide ? [[0, 0], [1, 0], [0, 1]] : [[0, 0]]) {
+        const xx = x + ox, yy = y + oy, j = yy * n + xx;
+        if (xx < 2 || yy < 2 || xx >= n - 2 || yy >= n - 2 || t[j] === TW || t[j] === TVOID || forbid[j]) continue;
+        cut.push([j, t[j]]); t[j] = TVOID;
+      }
+      a += rnd(-0.6, 0.6); x = Math.round(x + Math.cos(a)); y = Math.round(y + Math.sin(a));
+    }
+    if (cut.length < 4 || !allOk()) { for (const [j, prev] of cut) t[j] = prev; continue; }
+    made++;
+  }
+}
 function mkTrap(tx, ty, kind) {
   return { tx, ty, x: (tx + 0.5) * TILE, y: (ty + 0.5) * TILE, kind, off: Math.random() * TRAP_PERIOD, state: 0, cyc: -1 };
 }
@@ -431,7 +475,7 @@ function genHeights(t, n, bio, D, secRooms, shrines, puzzles, chests, endless, c
   };
 
   // mesetas y cumbres (bosque y forja)
-  const nPl = endless ? Math.round(4.5 * A) : bio[c * n + c] === 0 ? 6 : bio[c * n + c] === 2 ? 5 : 0;
+  const nPl = endless ? Math.round(4.5 * A) : [6, 0, 5, 3, 4][bio[c * n + c]] || 0;
   for (let k = 0, tries = 0; k < nPl && tries < 400; tries++) {
     const j = pick(floors), cx = j % n, cy = (j / n) | 0;
     if (bio[j] === 1 || D[j] < 10 || forbid[j] || h[j] !== 1 || !farFromFeats(cx, cy, 9)) continue;
@@ -569,6 +613,24 @@ function makeWallTop(b, TER) {
       if (Math.random() < 0.25) { x.fillStyle = '#1a1c2b'; x.fillRect(bx + 6 + Math.random() * 12, by + 4, 2, 9); }
       if (Math.random() < 0.15) { x.fillStyle = 'rgba(143,243,255,0.35)'; x.fillRect(bx + 3, by + 3, 6, 3); }
     }
+  } else if (b === 3) {   // roca húmeda con hongos que brillan
+    x.fillStyle = TER.top[2]; x.fillRect(0, 0, TILE, TILE);
+    for (let i = 0; i < 8; i++) px(Math.random() * TILE, Math.random() * TILE, 8 + Math.random() * 10, pick(TER.top));
+    for (let i = 0; i < 4; i++) {
+      const cx = Math.floor(Math.random() * 18) * 4, cy = Math.floor(Math.random() * 18) * 4, col = pick(['#5ad8c0', '#8ad83a', '#3ad8c0']);
+      x.fillStyle = col; x.fillRect(cx, cy, 4, 4); x.fillRect(cx + 4, cy + 4, 4, 4); x.fillStyle = '#e0fff8'; x.fillRect(cx, cy, 2, 2);
+    }
+  } else if (b === 4) {   // obsidiana con vetas de energía
+    x.fillStyle = TER.top[0]; x.fillRect(0, 0, TILE, TILE);
+    for (let i = 0; i < 7; i++) {
+      const cx = Math.random() * TILE, cy = Math.random() * TILE, s = 6 + Math.random() * 10;
+      x.fillStyle = pick(TER.top); x.beginPath(); x.moveTo(cx, cy - s); x.lineTo(cx + s * 0.6, cy); x.lineTo(cx, cy + s); x.lineTo(cx - s * 0.6, cy); x.fill();
+      x.fillStyle = 'rgba(224,200,255,0.35)'; x.fillRect(cx - 1, cy - s + 2, 2, s * 0.6);
+    }
+    for (let i = 0; i < 2; i++) {
+      let cx = Math.random() * 80, cy = Math.random() * 80;
+      for (let k = 0; k < 8; k++) { x.fillStyle = k % 3 ? '#b066ff' : '#ff3bd0'; x.fillRect(cx, cy, 3, 3); cx += rnd(-4, 7); cy += rnd(-4, 7); }
+    }
   } else {                // basalto en placas con vetas de lava
     x.fillStyle = TER.top[0]; x.fillRect(0, 0, TILE, TILE);          // base intermedia: sin costuras entre baldosas
     for (let i = 0; i < 9; i++) px(Math.random() * TILE, Math.random() * TILE, 8 + Math.random() * 8, pick(TER.top));
@@ -593,6 +655,12 @@ function makeWallFace(b, TER, v) {
     x.fillStyle = TER.face[1];
     for (let row = 0; row < 3; row++) for (let col = 0; col < 5; col++) x.fillRect(col * 16 + (row % 2) * 8, row * 10 + 9, 14, 1);
     if (v === 0) { x.fillStyle = '#5a3a20'; x.fillRect(36, 8, 8, 14); x.fillStyle = '#ffb040'; x.fillRect(37, 3, 6, 6); }   // antorcha
+  } else if (b === 3) {     // raíces colgantes con puntas luminosas
+    for (let k = 0; k < 5; k++) { const rx = 4 + k * 16 + Math.random() * 6, len = 10 + Math.random() * 16; x.fillStyle = '#3a2a1a'; x.fillRect(rx, 0, 3, len); x.fillStyle = '#5ad8c0'; x.fillRect(rx, len, 3, 3); }
+  } else if (b === 4) {     // facetas de cristal
+    x.fillStyle = TER.face[1];
+    for (let k = 0; k < 7; k++) { const fx = k * 12 + Math.random() * 4; x.fillRect(fx, 0, 2, h); }
+    if (v !== 2) { x.fillStyle = '#b066ff'; const lx = 8 + Math.random() * 60; x.fillRect(lx, 4, 2, h - 12); x.fillStyle = '#ff3bd0'; x.fillRect(lx, 4, 2, 4); }
   } else {                  // basalto con goteo de lava
     x.fillStyle = TER.face[1];
     for (let k = 0; k < 6; k++) x.fillRect(k * 14 + Math.random() * 4, 0, 2, h);
@@ -609,6 +677,7 @@ function makeWallFace(b, TER, v) {
 let SOL_LO = 0, SOL_HI = 0;
 function solidFor(o, j) {
   if (MAP.t[j] === TW) return true;
+  if (MAP.t[j] === TVOID && o !== P) return true;        // el vacío: solo el jugador puede (y caerá)
   if (MAP.secClosed[j] && o !== P) return true;          // salas secretas: solo el jugador las abre
   if (o.lv === undefined) return false;
   const jl = MAP.h[j];
@@ -656,7 +725,7 @@ function settleLv(o) {
   const c = tIdx(o.x, o.y);
   if (c === o.ti) { o.lx = o.x; o.ly = o.y; return; }
   const pc = o.ti, lo = MAP.ramp[pc] ? MAP.h[pc] : o.lv, hi = MAP.ramp[pc] ? lo + 1 : o.lv;
-  if (c < 0 || MAP.t[c] === TW || (MAP.secClosed[c] && o !== P)) { o.x = o.lx; o.y = o.ly; return; }
+  if (c < 0 || MAP.t[c] === TW || ((MAP.secClosed[c] || MAP.t[c] === TVOID) && o !== P)) { o.x = o.lx; o.y = o.ly; return; }
   const jl = MAP.h[c], jh = jl + (MAP.ramp[c] ? 1 : 0);
   if (jl > hi || (jh < lo && !o.drop)) { o.x = o.lx; o.y = o.ly; return; }
   if (jh < lo) o.fell = (o.fell || 0) + lo - jh;
@@ -670,7 +739,7 @@ function sameLevel(a, b) {
 }
 // ¿se puede pasar de la baldosa i a la vecina j? (campo de flujo de los enemigos)
 function linkT(i, j) {
-  if (MAP.t[j] === TW || MAP.secClosed[j]) return false;
+  if (MAP.t[j] === TW || MAP.t[j] === TVOID || MAP.secClosed[j]) return false;
   const a = MAP.h[i], b = MAP.h[j];
   return b <= a + (MAP.ramp[i] ? 1 : 0) && b + (MAP.ramp[j] ? 1 : 0) >= a;
 }
@@ -682,7 +751,7 @@ function updateFlow() {
   MAP.ptx = tx; MAP.pty = ty;
   bfsH(MAP.t, MAP.h, MAP.ramp, MAP.secClosed, clamp(tx, 0, MAPN - 1), clamp(ty, 0, MAPN - 1), MAP.flow);
   MAP.fver++;
-  reveal(tx, ty, P.lv >= 2 ? 7.5 + (P.lv - 1) * 2.5 : P.lv === 0 ? 6 : 7.5);   // desde lo alto ves más lejos
+  reveal(tx, ty, (P.lv >= 2 ? 7.5 + (P.lv - 1) * 2.5 : P.lv === 0 ? 6 : 7.5) + (P.visBonus || 0));   // desde lo alto ves más lejos
 }
 const NAV = [0, 0];
 function navDir(e) {
@@ -729,6 +798,7 @@ function reveal(tx, ty, R) {
 const LV_LIFT = [0.9, 1.6, 2.0, 2.4];
 function fogPaint(i) {
   const d = MAP.fogImg.data, tt = MAP.secClosed[i] ? TW : MAP.t[i], TER = TERRAIN[BIOME_KEYS[MAP.bio[i]]];
+  if (tt === TVOID) { d[i * 4] = 6; d[i * 4 + 1] = 2; d[i * 4 + 2] = 14; d[i * 4 + 3] = 255; return; }
   const col = tt === TW ? TER.top[1] : MAP.ramp[i] ? '#a89a78' : tt === TSLOW ? TER.slow[1] : tt === THURT ? TER.hurt[1] : tt === TICE ? '#bfe8ff' : tt === TSLOPE ? '#7a7a6a' : LEVELS[MAP.bio[i]].ground[0];
   const [r, g, b] = hexRGB(col);
   const lift = tt === TW ? 0.7 : LV_LIFT[MAP.h[i]] || 1.6;
@@ -746,7 +816,7 @@ function updateWorld(dt) {
   for (const z of MAP.zones) if ((P.x - z.x) ** 2 + (P.y - z.y) ** 2 < z.r * z.r) { P.inZone = z.type; z.seen = true; }
   if (P.inZone === 'sagrada') heal(P.s.maxHp * 0.02 * dt);
   for (const sh of MAP.shrines) {
-    if (sh.used || !sh.guard) continue;
+    if (!shrineLive(sh) || !sh.guard) continue;
     if (!sh.g && (P.x - sh.x) ** 2 + (P.y - sh.y) ** 2 < 430 * 430) spawnGuardian(sh);
     else if (sh.g && sh.g.dead) {
       sh.guard = false;
@@ -784,6 +854,7 @@ function solvePuzzle(pz) {
   pz.solved = true; S.puzzles = (S.puzzles || 0) + 1;
   const sp = safeSpot(pz.x, pz.y);
   S.picks.push({ k: 'chest', x: sp.x, y: sp.y, tier: 2 });
+  dropRelic(sp.x, sp.y, 'puzle');
   for (let i = 0; i < 8; i++) S.picks.push({ k: 'soul', x: pz.x + rnd(-60, 60), y: pz.y + rnd(-60, 60), v: 2 });
   banner('🧩 ¡Puzle resuelto!', 'Recoge el cofre: mejora épica o superior', 2.4, '#5bffd0');
   ring(pz.x, pz.y, 10, 260, 0.6, '#5bffd0', 8);
@@ -908,6 +979,7 @@ function updateFeats() {
       } else if (f.mobs.every(e => e.dead)) {
         f.done = true;
         S.picks.push({ k: 'chest', x: f.x, y: f.y + 34, tier: 2 });
+        dropRelic(f.x, f.y + 60, 'cripta');
         for (let i = 0; i < 8; i++) S.picks.push({ k: 'soul', x: f.x + rnd(-60, 60), y: f.y + rnd(-40, 60), v: 2 });
         banner('⚰ El sarcófago se abre', 'Recoge el cofre: mejora épica o superior', 2.2, '#ffd43b');
         ring(f.x, f.y, 10, 200, 0.6, '#ffd43b', 6); AU.sfx('chest');
@@ -986,7 +1058,7 @@ function drawGround(x0, y0, x1, y1) {
     return;
   }
   const [tx0, tx1, ty0, ty1] = visTiles(x0, y0, x1, y1), n = MAPN;
-  for (let b = 0; b < 3; b++) {
+  for (let b = 0; b < LEVELS.length; b++) {
     ctx.fillStyle = S.groundPats[b];
     for (let ty = ty0; ty <= ty1; ty++) for (let tx = tx0; tx <= tx1; tx++) if (MAP.bio[ty * n + tx] === b) ctx.fillRect(tx * TILE, ty * TILE, TILE + 0.5, TILE + 0.5);
   }
@@ -997,7 +1069,18 @@ function drawTerrain(x0, y0, x1, y1) {
   for (let ty = ty0; ty <= ty1; ty++) for (let tx = tx0; tx <= tx1; tx++) {
     const i = ty * n + tx, tt = MAP.t[i]; if (tt === TF || tt === TW) continue;
     const TER = TERRAIN[BIOME_KEYS[MAP.bio[i]]], x = tx * TILE, y = ty * TILE;
-    if (tt === TSLOW) {
+    if (tt === TVOID) {
+      ctx.fillStyle = '#020005'; ctx.fillRect(x - 0.5, y - 0.5, TILE + 1, TILE + 1);
+      ctx.fillStyle = `rgba(90,30,150,${0.1 + Math.sin(tm * 1.5) * 0.04})`; ctx.fillRect(x - 0.5, y - 0.5, TILE + 1, TILE + 1);
+      for (let k = 0; k < 3; k++) {                // estrellas del fondo del abismo
+        ctx.fillStyle = k ? 'rgba(200,170,255,0.45)' : 'rgba(255,59,208,0.6)';
+        ctx.fillRect(x + ((tx * 31 + k * 27) % 74) + 3, y + ((ty * 17 + k * 23 + Math.floor(tm * 6)) % 74) + 3, 2, 2);
+      }
+      // borde: el suelo de arriba cae al vacío
+      const up = ty > 0 ? MAP.t[i - n] : TW;
+      if (up !== TVOID && up !== TW) { ctx.drawImage(cliffTex(MAP.bio[i]), (tx % 2) * TILE, 0, TILE, 34, x, y, TILE, 34); ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(x, y + 30, TILE, 8); }
+      for (const [dx2, ex] of [[-1, x], [1, x + TILE - 3]]) { const j = i + dx2; if (tx + dx2 >= 0 && tx + dx2 < n && MAP.t[j] !== TVOID && MAP.t[j] !== TW) { ctx.fillStyle = 'rgba(176,102,255,0.55)'; ctx.fillRect(ex, y, 3, TILE); } }
+    } else if (tt === TSLOW) {
       ctx.fillStyle = rgba(TER.slow[1], 0.55); ctx.fillRect(x, y, TILE, TILE);
       ctx.fillStyle = rgba(TER.slow[1], 0.9);
       for (let k = 0; k < 5; k++) ctx.fillRect(x + ((tx * 37 + k * 23) % 70) + 4, y + ((ty * 53 + k * 31) % 70) + 4, 6, 3);
@@ -1042,6 +1125,13 @@ function cliffTex(b) {
   } else if (b === 1) {     // sillería
     x.fillStyle = TER.face[1];
     for (let row = 0; row < 7; row++) { x.fillRect(0, row * 10 + 9, TILE * 2, 1); for (let col = 0; col < 10; col++) x.fillRect(col * 16 + (row % 2) * 8, row * 10, 1, 10); }
+  } else if (b === 3) {     // roca mojada con raíces
+    x.fillStyle = TER.face[1]; for (let k = 0; k < 10; k++) x.fillRect(Math.random() * 156, Math.random() * h, 6, 3);
+    for (let k = 0; k < 6; k++) { x.fillStyle = '#3a2a1a'; const rx = Math.random() * 150; x.fillRect(rx, 0, 3, 8 + Math.random() * 30); }
+    x.fillStyle = '#5ad8c0'; for (let k = 0; k < 5; k++) x.fillRect(Math.random() * 156, Math.random() * h, 3, 3);
+  } else if (b === 4) {     // obsidiana con vetas
+    x.fillStyle = TER.face[1]; for (let k = 0; k < 12; k++) x.fillRect(k * 14 + Math.random() * 4, 0, 2, h);
+    for (let k = 0; k < 3; k++) { x.fillStyle = '#b066ff'; const lx = 10 + Math.random() * 140; x.fillRect(lx, Math.random() * 30, 2, 10 + Math.random() * 14); }
   } else {                  // basalto con vetas
     x.fillStyle = TER.face[1]; for (let k = 0; k < 12; k++) x.fillRect(k * 14 + Math.random() * 4, 0, 2, h);
     for (let k = 0; k < 3; k++) { x.fillStyle = '#ff5a1a'; const lx = 10 + Math.random() * 140; x.fillRect(lx, Math.random() * 30, 3, 10 + Math.random() * 14); }
@@ -1051,7 +1141,7 @@ function cliffTex(b) {
 function drawHeights(x0, y0, x1, y1) {
   const n = MAPN, h = MAP.h, rp = MAP.ramp;
   const [tx0, tx1, ty0, ty1] = visTiles(x0, y0, x1, y1);
-  const fl = j => !wallLike(j);
+  const fl = j => !wallLike(j) && MAP.t[j] !== TVOID;
   const top = j => h[j] + (rp[j] ? 1 : 0);
   for (let ty = ty0; ty <= ty1; ty++) for (let tx = tx0; tx <= tx1; tx++) {
     const i = ty * n + tx; if (!fl(i)) continue;
@@ -1117,7 +1207,8 @@ function coversPlayer(x0, y0, x1, y1) { return P.x + 20 > x0 && P.x - 20 < x1 &&
 function drawWall(o) {
   const n = MAPN, tx = o.tx, ty = o.ty, x = tx * TILE, y = ty * TILE, t = MAP.t, i = ty * n + tx;
   const b = MAP.bio[i], tex = wallTex(b), h = hash2(tx, ty), TER = TERRAIN[BIOME_KEYS[b]];
-  const W_ = (xx, yy) => xx < 0 || yy < 0 || xx >= n || yy >= n || wallLike(yy * n + xx);
+  if (MAP.pil && MAP.pil[i]) { drawPillar(x, y, o.y > P.y && coversPlayer(x, y - WALLH, x + TILE, y + TILE)); return; }
+  const W_ = (xx, yy) => xx < 0 || yy < 0 || xx >= n || yy >= n || (wallLike(yy * n + xx) && !(MAP.pil && MAP.pil[yy * n + xx]));
   const up = W_(tx, ty - 1), dn = W_(tx, ty + 1), lf = W_(tx - 1, ty), rt = W_(tx + 1, ty);
   const top = y - WALLH;
   const see = o.y > P.y && coversPlayer(x, top, x + TILE, y + TILE);
@@ -1128,6 +1219,8 @@ function drawWall(o) {
     ctx.drawImage(tex.faces[fv], x, y + TILE - WALLH);
     if (b === 1 && fv === 0) ctx.drawImage(glowSpr('#ffb040'), x + 22, y + TILE - WALLH - 18, 36, 36);   // antorcha encendida
     if (b === 2 && fv !== 2) ctx.drawImage(glowSpr('#ff5a1a'), x + 10, y + TILE - WALLH - 6, 60, 30);
+    if (b === 3 && fv === 0) ctx.drawImage(glowSpr('#5ad8c0'), x + 4, y + TILE - 22, 70, 30);
+    if (b === 4 && fv !== 2) ctx.drawImage(glowSpr('#b066ff'), x + 10, y + TILE - WALLH - 4, 60, 30);
   }
   // bordes: brillo arriba, sombra a los lados expuestos
   if (!up) { ctx.fillStyle = TER.rim; ctx.globalAlpha = 0.55; ctx.fillRect(x, top, TILE, 3); ctx.globalAlpha = 1; }
@@ -1146,8 +1239,21 @@ function drawWall(o) {
   if (MAP.sec[i] && MAP.secClosed[i] && MAP.secRooms[MAP.sec[i] - 1].ei === i) drawSecretCracks(x, y, top, !dn, b);
   ctx.globalAlpha = 1;
 }
+// pilar de roca de la afinidad Tierra (temporal)
+function drawPillar(x, y, see) {
+  if (see) ctx.globalAlpha = 0.45;
+  const cx = x + TILE / 2, base = y + TILE - 6, top = y - WALLH + 6;
+  shadow(cx, base, 34);
+  ctx.fillStyle = '#1e1c22'; ctx.fillRect(cx - 30, top + 10, 60, base - top - 10);
+  ctx.fillStyle = '#8a8680'; ctx.fillRect(cx - 27, top + 12, 54, base - top - 14);
+  ctx.fillStyle = '#64605c'; ctx.fillRect(cx + 8, top + 12, 19, base - top - 14);
+  ctx.fillStyle = '#aeaaa2'; ctx.fillRect(cx - 27, top + 12, 10, base - top - 14);
+  ctx.fillStyle = '#cfcbc2'; ctx.beginPath(); ctx.ellipse(cx, top + 12, 27, 10, 0, 0, TAU); ctx.fill();
+  ctx.fillStyle = '#3a3640'; for (let k = 0; k < 3; k++) ctx.fillRect(cx - 14 + k * 11, top + 30 + k * 14, 8, 3);
+  ctx.globalAlpha = 1;
+}
 function drawSecretCracks(x, y, top, faceVisible, b) {
-  const crack = b === 0 ? '#060c05' : b === 1 ? '#0b0c16' : '#0e0403', edge = b === 0 ? '#6a9a50' : b === 1 ? '#a8b0d0' : '#c87a50';
+  const crack = ['#060c05', '#0b0c16', '#0e0403', '#04080a', '#08040e'][b], edge = ['#6a9a50', '#a8b0d0', '#c87a50', '#5ad8c0', '#b066ff'][b];
   const zig = (sx, sy, pts) => {
     let cx = sx, cy = sy;
     for (const [dx, dy] of pts) { ctx.fillStyle = edge; ctx.fillRect(cx + 4, cy, 2, 4); ctx.fillStyle = crack; ctx.fillRect(cx, cy, 4, 4); cx += dx; cy += dy; }
@@ -1158,12 +1264,12 @@ function drawSecretCracks(x, y, top, faceVisible, b) {
   if (faceVisible) {           // fachada: un arco tapiado con piedras sueltas
     const fy = y + TILE - WALLH;
     ctx.fillStyle = '#07050a'; ctx.fillRect(x + 22, fy + 6, 36, WALLH - 6); ctx.fillRect(x + 26, fy + 2, 28, 4); ctx.fillRect(x + 32, fy - 2, 16, 4);
-    const st = b === 1 ? ['#6a7090', '#555c78'] : b === 0 ? ['#5a4a34', '#4a3a28'] : ['#6a4030', '#5a3326'];
+    const st = [['#5a4a34', '#4a3a28'], ['#6a7090', '#555c78'], ['#6a4030', '#5a3326'], ['#33464e', '#22303a'], ['#3a2450', '#2a1a3a']][b];
     for (let k = 0; k < 7; k++) { ctx.fillStyle = st[k % 2]; ctx.fillRect(x + 24 + (k % 4) * 8, fy + 8 + Math.floor(k / 4) * 9, 7, 7); }
   }
   const a = 0.18 + Math.sin(S.time * 2.2 + x) * 0.1;
   const pa = ctx.globalAlpha; ctx.globalAlpha = pa * a;
-  ctx.drawImage(glowSpr(b === 2 ? '#ffb070' : '#bfe8ff'), x + 10, faceVisible ? y + 20 : top + 10, 60, 50);
+  ctx.drawImage(glowSpr(['#bfe8ff', '#bfe8ff', '#ffb070', '#5ad8c0', '#e0c8ff'][b]), x + 10, faceVisible ? y + 20 : top + 10, 60, 50);
   ctx.globalAlpha = pa;
 }
 function drawTrapsZones(vis) {
@@ -1188,6 +1294,10 @@ function drawTrapsZones(vis) {
       if (tr.kind === 'spikes') {
         ctx.fillStyle = '#e8e0d0';
         for (let k = 0; k < 9; k++) { const sx = x - 14 + (k % 3) * 14, sy = y - 14 + Math.floor(k / 3) * 14; ctx.beginPath(); ctx.moveTo(sx - 5, sy + 4); ctx.lineTo(sx, sy - 14); ctx.lineTo(sx + 5, sy + 4); ctx.fill(); }
+      } else if (tr.kind === 'void') {
+        ctx.drawImage(glowSpr('#ff3bd0'), x - 46, y - 46, 92, 92);
+        ctx.strokeStyle = '#ffb0f0'; ctx.lineWidth = 3;
+        for (let k = 0; k < 4; k++) { ctx.beginPath(); ctx.arc(x, y, 8 + k * 7, S.time * 8 + k, S.time * 8 + k + 2); ctx.stroke(); }
       } else if (tr.kind === 'vent') {
         ctx.drawImage(glowSpr('#ff8a2a'), x - 46, y - 90, 92, 110);
         ctx.fillStyle = 'rgba(255,220,120,0.8)'; ctx.fillRect(x - 8, y - 60, 16, 60);
@@ -1219,6 +1329,10 @@ function heightHint() {
     if (x < 0 || y < 0 || x >= n || y >= n) continue;
     const j = y * n + x;
     if (!wallLike(j) && MAP.h[j] + (MAP.ramp[j] ? 1 : 0) < P.lv) return ['⬇ Risco: usa el dash para saltar abajo (la caída hace daño)', '#ffb070'];
+  }
+  for (const [dx, dy] of DIRS4) {
+    const x = Math.floor((P.x + dx * 34) / TILE), y = Math.floor((P.y + dy * 34) / TILE);
+    if (x >= 0 && y >= 0 && x < n && y < n && MAP.t[y * n + x] === TVOID) return ['🕳 Vacío: si caes, pierdes vida y vuelves atrás · con dash puedes saltar la grieta', '#d0a0ff'];
   }
   if (P.lv === 0) return ['⚰ Cripta hundida: sal por la escalera', '#a8a0d8'];
   if (P.lv >= 2) return ['⛰ Terreno elevado: +15% daño a los de abajo y ves más lejos', '#ffe9a8'];

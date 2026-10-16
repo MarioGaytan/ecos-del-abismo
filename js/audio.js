@@ -14,6 +14,10 @@ const TRACKS = [
   { bpm: 140, root: 52, wave: 'sawtooth', bass: [0, 0, null, 0, 1, null, 0, null, 0, 0, null, 0, 3, null, 1, null], arp: [12, null, 13, null, 16, null, 19, null, 12, null, 13, null, 19, null, 16, null], kick: [0, 4, 8, 12], hat: [2, 6, 10, 14] },
   // jefe
   { bpm: 156, root: 45, wave: 'square', bass: [0, 0, 12, 0, 0, 10, 0, 7, 0, 0, 12, 0, 3, 5, 3, 1], arp: [24, 27, 31, 27, 24, 27, 31, 34, 24, 27, 31, 27, 22, 25, 29, 25], kick: [0, 4, 8, 12], hat: [2, 6, 10, 14, 15] },
+  // raíces hundidas: Do# menor, goteo lento y misterioso
+  { bpm: 100, root: 49, wave: 'sine', bass: [0, null, null, null, null, null, 3, null, -2, null, null, null, null, null, -5, null], arp: [12, null, 19, 15, null, 24, null, 19, 12, null, 17, 14, null, 22, null, 17], kick: [0, 10], hat: [4, 7, 12, 15] },
+  // corazón del abismo: Si bemol locrio, disonante y urgente
+  { bpm: 126, root: 46, wave: 'sawtooth', bass: [0, null, 0, 1, null, 0, 6, null, 0, null, 0, 1, null, 6, 5, 1], arp: [12, 18, 13, 24, 18, 13, 25, 18, 12, 18, 13, 22, 18, 13, 24, 30], kick: [0, 6, 8, 14], hat: [2, 4, 10, 12] },
 ];
 
 const AU = {
