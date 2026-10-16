@@ -45,8 +45,8 @@ const UI = {
     const cur = SAVE.settings.diff || 'normal';
     for (const [k, D] of Object.entries(DIFFS)) {
       const b = document.createElement('button');
-      b.className = 'lv dif' + (cur === k ? ' sel' : '');
-      b.innerHTML = `${D.ic} ${D.n}<small>${D.d}</small>`;
+      b.className = 'lv dif' + (D.tryhard ? ' th' : '') + (cur === k ? ' sel' : '');
+      b.innerHTML = `${D.ic} ${D.n}<small>${D.d}<br>🎁 cofre de élite ${Math.round(D.chest * 100)}%</small>`;
       b.onclick = () => { SAVE.settings.diff = k; persist(); AU.init(); AU.sfx('ui'); this.buildMenu(); };
       df.appendChild(b);
     }

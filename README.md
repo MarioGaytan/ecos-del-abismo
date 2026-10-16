@@ -55,7 +55,8 @@ Elijo un héroe, bajo al Abismo y sobrevivo dos minutos y medio a oleadas que no
 
 - **⚔ Campaña:** los 3 niveles con su jefe.
 - **∞ Hordas infinitas:** un solo mapa gigante (unas 3 veces más grande) que mezcla bosque, cripta y forja. Los enemigos cambian según el bioma que pisas y la **amenaza** sube cada 30 segundos sin parar. Cada 3 minutos llega un jefe; al derrotarlo subes una **Ascensión** (más enemigos, más élites, hordas mezcladas de los 3 biomas y +1 re-tirada) y su portal lleva al Altar de Almas. El reto es ver cuánto aguantas.
-- **Dificultad:** 🌱 Fácil, ⚔️ Normal, 🔥 Difícil o 💀 Pesadilla. Cambia la experiencia y la vida, el daño y la cantidad de enemigos. Las más difíciles dan más Esencia.
+- **Dificultad:** 🌱 Fácil, ⚔️ Normal, 🔥 Difícil, 💀 Pesadilla o 👹 Tryhard. Cambia la experiencia y la vida, el daño y la cantidad de enemigos. Las más difíciles dan más Esencia. La probabilidad de que un élite (minijefe) suelte cofre también depende de ella: 100% / 70% / 40% / 20% / 12% (los élites sorpresa que salen de la horda, la mitad).
+- **👹 Tryhard:** para los que se creen pros. Enemigos con +120% de vida y +90% de daño, +45% de enemigos, el doble de élites, -35% de experiencia, solo un corazón en el suelo a la vez (y salen la mitad), sin imanes, -30% de rango de recogida, toda la curación a la mitad y sin re-tirada inicial. Da x3 Esencia.
 - **Ritmo de combate:** el juego estima tu daño por segundo y acerca la vida de los enemigos a unos tiempos objetivo: un enemigo normal cae en 1–3 s, un élite en unos 10 s y un jefe en 30 s o más. Un golpe normal te quita alrededor del 6–10% de tu vida. Es una mezcla, no un reemplazo: mejorar tu daño o tu vida se sigue notando, pero nada se vuelve una esponja.
 - **Curación limitada:** las curaciones pasivas (robo de vida, regeneración, vampirismo, zonas sagradas…) comparten un tope por segundo (2,5% de tu vida + 2), y durante 1,5 s después de recibir un golpe curan la mitad. Corazones, fuentes y elixires curan de golpe y sin tope, pero son escasos.
 - **Escudo de energía:** una burbuja visible que absorbe el daño antes que la vida. Se rompe con un estallido y se reconstruye sola tras 4 s sin recibir golpes. Se consigue con *Barrera de Energía* (y se acelera con *Condensador*); el Mago empieza con un poco.
@@ -100,6 +101,11 @@ Cada nivel se genera de forma procedural cada vez que juegas:
 - **Santuarios protegidos por un guardián**, con poder, curación, cofres o tiempo lento como premio… y un altar maldito para los valientes.
 - **Zonas especiales**: la *Arboleda Sagrada* cura; la *Zona Maldita* da más experiencia a cambio de más peligro.
 - **Cofres escondidos** en callejones sin salida.
+- **Salas secretas:** pequeñas salas talladas dentro de la roca, con un cofre épico. La entrada no está señalada, pero se distingue: un arco tapiado y agrietado, una corriente de aire tenue y escombros en el suelo delante. Camina hacia ella para abrirla. Hasta entonces los enemigos no pueden entrar, y el minimapa no la delata.
+- **Alturas:** el bosque y la forja tienen **mesetas** (y a veces una **cumbre** encima), y la cripta tiene **criptas hundidas**. Solo se sube y se baja por rampas o escaleras; con el **dash** puedes saltar desde un risco, pero la caída hace daño (8% de tu vida por un nivel, 22% por dos; nunca te mata). Desde lo alto haces +15% de daño a los enemigos de abajo y ves más lejos. Los enemigos de a pie no te tocan desde otro nivel: tienen que rodear por las rampas, que se vuelven cuellos de botella. El parpadeo del pícaro sí sube riscos.
+  - **Cumbre:** tiene un estandarte y un cofre épico a la vista; al subir salta una emboscada.
+  - **Cripta hundida:** al bajar se oscurece y los muertos despiertan (con un élite). Si los vences, el sarcófago se abre y da un cofre épico.
+- **Nada te tapa:** los muros, árboles y rocas que quedan delante del personaje se vuelven translúcidos, y si un muro te cubre se ve tu silueta.
 - **Puzles:** *Runas de memoria* (la tablilla muestra una secuencia de símbolos; písalos en ese orden, y si te equivocas aparecen enemigos) y *Braseros* (enciende los 4 a la vez antes de que se apaguen). Al resolverlos ganas una mejora épica o mejor.
 - **Niebla de guerra**: el mapa se revela conforme lo exploro.
 

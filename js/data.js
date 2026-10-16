@@ -30,11 +30,14 @@ const SCHOOLS = {
 const SCHOOL_KEYS = Object.keys(SCHOOLS);
 
 // Dificultad: multiplica experiencia, vida/daño/aparición de enemigos y la Esencia ganada.
+// chest: prob. de cofre de los élites (minijefes) · hearts: corazones a la vez · heal: multiplicador de curación
 const DIFFS = {
-  facil:     { n: 'Fácil',     ic: '🌱', d: '+25% exp · enemigos más débiles', xp: 1.25, hp: 0.75, dmg: 0.7, spawn: 0.85, ess: 0.7 },
-  normal:    { n: 'Normal',    ic: '⚔️', d: 'La experiencia pensada',          xp: 1,    hp: 1,    dmg: 1,   spawn: 1,    ess: 1 },
-  dificil:   { n: 'Difícil',   ic: '🔥', d: '-15% exp · enemigos más duros',   xp: 0.85, hp: 1.35, dmg: 1.3, spawn: 1.15, ess: 1.4 },
-  pesadilla: { n: 'Pesadilla', ic: '💀', d: '-25% exp · solo builds rotas',     xp: 0.75, hp: 1.8,  dmg: 1.6, spawn: 1.3,  ess: 2 },
+  facil:     { n: 'Fácil',     ic: '🌱', d: '+25% exp · enemigos más débiles', xp: 1.25, hp: 0.75, dmg: 0.7, spawn: 0.85, ess: 0.7, chest: 1 },
+  normal:    { n: 'Normal',    ic: '⚔️', d: 'La experiencia pensada',          xp: 1,    hp: 1,    dmg: 1,   spawn: 1,    ess: 1,   chest: 0.7 },
+  dificil:   { n: 'Difícil',   ic: '🔥', d: '-15% exp · enemigos más duros',   xp: 0.85, hp: 1.35, dmg: 1.3, spawn: 1.15, ess: 1.4, chest: 0.4 },
+  pesadilla: { n: 'Pesadilla', ic: '💀', d: '-25% exp · solo builds rotas',     xp: 0.75, hp: 1.8,  dmg: 1.6, spawn: 1.3,  ess: 2,   chest: 0.2 },
+  tryhard:   { n: 'Tryhard',   ic: '👹', d: '1 corazón a la vez · sin imanes · -50% curación', xp: 0.65, hp: 2.2, dmg: 1.9, spawn: 1.45, ess: 3, chest: 0.12,
+               hearts: 1, heartCh: 0.5, noMagnet: true, heal: 0.5, rerolls: 0, elite: 2, magnet: 0.7, tryhard: true },
 };
 
 const CLASSES = {

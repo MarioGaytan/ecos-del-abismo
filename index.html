@@ -62,6 +62,8 @@
   .seg { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
   .seg .lv { min-width: 150px; }
   .dif { min-width: 120px !important; }
+  .dif.th { border-color: #ff3b3b; color: #ffb0b0; }
+  .dif.th.sel { background: #4a1010; border-color: #ff5a5a; box-shadow: 0 0 12px #ff3b3b88; }
   .crossBody, .ccol { display: flex; flex-direction: column; align-items: center; }
   .souls { color: #d0a0ff; font-family: 'Silkscreen', monospace; }
   .keys { font-size: 12px; color: var(--dim); margin-top: 10px; text-align: center; }
@@ -321,13 +323,13 @@
   <div class="row"><button id="retryBtn" class="big">↻ Reintentar [Enter]</button><button id="menuBtn">Menú [Esc]</button></div>
 </div>
 
-<script src="js/data.js?v=14"></script>
-<script src="js/sprites.js?v=14"></script>
-<script src="js/audio.js?v=14"></script>
-<script src="js/world.js?v=14"></script>
-<script src="js/game.js?v=14"></script>
-<script src="js/touch.js?v=14"></script>
-<script src="js/ui.js?v=14"></script>
+<script src="js/data.js?v=16"></script>
+<script src="js/sprites.js?v=16"></script>
+<script src="js/audio.js?v=16"></script>
+<script src="js/world.js?v=16"></script>
+<script src="js/game.js?v=16"></script>
+<script src="js/touch.js?v=16"></script>
+<script src="js/ui.js?v=16"></script>
 <script>
   // PWA: se guarda para jugar sin internet (solo funciona servido por http/https, no con doble clic)
   if ('serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('sw.js').catch(() => {});

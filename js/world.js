@@ -51,6 +51,27 @@ function bfs(t, sx, sy, out) {
   }
   return out;
 }
+// BFS con alturas: dos baldosas vecinas se conectan si sus niveles coinciden (una rampa
+// abarca su nivel y el siguiente). `closed` bloquea las salas secretas aún sin descubrir.
+function bfsH(t, h, rp, closed, sx, sy, out) {
+  const n = MAPN; out.fill(-1);
+  const q = new Int32Array(n * n); let hd = 0, e = 0;
+  const s = sy * n + sx; if (t[s] === TW) return out;
+  out[s] = 0; q[e++] = s;
+  const go = (j, d, lo, hi) => {
+    if (t[j] === TW || out[j] >= 0 || (closed && closed[j])) return;
+    const jl = h[j]; if (jl > hi || jl + (rp[j] ? 1 : 0) < lo) return;
+    out[j] = d; q[e++] = j;
+  };
+  while (hd < e) {
+    const i = q[hd++], x = i % n, y = (i / n) | 0, d = out[i] + 1, lo = h[i], hi = lo + (rp[i] ? 1 : 0);
+    if (x > 0) go(i - 1, d, lo, hi);
+    if (x < n - 1) go(i + 1, d, lo, hi);
+    if (y > 0) go(i - n, d, lo, hi);
+    if (y < n - 1) go(i + n, d, lo, hi);
+  }
+  return out;
+}
 function randomFloorAround(x, y, rmin, rmax, tries) {
   for (let k = 0; k < (tries || 12); k++) {
     const a = Math.random() * TAU, r = rnd(rmin, rmax);
@@ -277,17 +298,244 @@ function genMap(L, endless) {
     decals.push({ x: (i % n + Math.random()) * TILE, y: (((i / n) | 0) + Math.random()) * TILE, col: pick(LEVELS[b].decal), k: kk, s: rnd(2, 4) | 0, lava: b === 2 && kk === 2 });
   }
 
+  // salas secretas talladas en la roca y alturas (mesetas, cumbres, criptas hundidas)
+  const sec = new Uint8Array(N);
+  const secRooms = genSecrets(t, n, D, floorTiles, sec, chests, decals, endless);
+  const HG = genHeights(t, n, bio, D, secRooms, shrines, puzzles, chests, endless, c);
+  // en las rampas no hay trampas ni decoración que estorbe el paso
+  const nearRamp = (x, y, r) => {
+    for (let ty = Math.floor((y - r) / TILE) - 1; ty <= Math.floor((y + r) / TILE) + 1; ty++) for (let tx = Math.floor((x - r) / TILE) - 1; tx <= Math.floor((x + r) / TILE) + 1; tx++) {
+      if (tx < 0 || ty < 0 || tx >= n || ty >= n || !HG.ramp[ty * n + tx]) continue;
+      if (Math.abs(x - clamp(x, tx * TILE, tx * TILE + TILE)) < r + 30 && Math.abs(y - clamp(y, ty * TILE, ty * TILE + TILE)) < r + 30) return true;
+    }
+    return false;
+  };
+  for (let q = traps.length - 1; q >= 0; q--) if (HG.ramp[traps[q].ty * n + traps[q].tx]) traps.splice(q, 1);
+  for (let q = props.length - 1; q >= 0; q--) if (nearRamp(props[q].x, props[q].y, props[q].r)) props.splice(q, 1);
+  for (const f of HG.feats) if (f.type !== 'meseta') for (let q = props.length - 1; q >= 0; q--) if (Math.hypot(props[q].x - f.x, props[q].y - f.y) < 130) props.splice(q, 1);
+
   MAP = {
     n, t, bio, dir, D, traps, zones, shrines, chests, props, decals, endless, puzzles,
+    h: HG.h, ramp: HG.ramp, feats: HG.feats, sec, secRooms, secClosed: sec.map(v => (v ? 1 : 0)),
     flow: new Int32Array(N).fill(-1), fver: 0, ptx: -1, pty: -1,
     fog: new Uint8Array(N), fogImg: new ImageData(n, n), fogC: newCanvas(n, n),
   };
-  MAP.flow = bfs(t, c, c, MAP.flow);
+  MAP.flow = bfsH(t, MAP.h, MAP.ramp, MAP.secClosed, c, c, MAP.flow);
   return MAP;
 }
 
 function mkTrap(tx, ty, kind) {
   return { tx, ty, x: (tx + 0.5) * TILE, y: (ty + 0.5) * TILE, kind, off: Math.random() * TRAP_PERIOD, state: 0, cyc: -1 };
+}
+
+// ---------------------------------------------------------------- salas secretas
+// Se tallan dentro de macizos de muro, con una sola entrada de 1 baldosa. Hasta que el jugador
+// la cruza se dibujan como muro (los enemigos no pueden entrar); la entrada se ve agrietada y
+// con escombros delante: no está señalada, pero un ojo atento la distingue.
+const DIRS4 = [[0, -1], [1, 0], [0, 1], [-1, 0]];   // N, E, S, O
+function genSecrets(t, n, D, floorTiles, sec, chests, decals, endless) {
+  const rooms = [], want = endless ? 5 : 2;
+  const isW = (x, y) => x < 1 || y < 1 || x >= n - 1 || y >= n - 1 || t[y * n + x] === TW;
+  // todas las combinaciones válidas (suelo → entrada de 1 baldosa → sala rodeada de roca); luego se eligen al azar
+  const cands = [];
+  for (const fi of floorTiles) {
+    if (t[fi] === TW || D[fi] < 9) continue;
+    const fx = fi % n, fy = (fi / n) | 0;
+    for (let dk = 0; dk < 4; dk++) {
+      const [dx, dy] = DIRS4[dk], ex = fx + dx, ey = fy + dy;
+      if (!isW(ex, ey) || !isW(ex - dy, ey + dx) || !isW(ex + dy, ey - dx)) continue;
+      for (const [rw, rh] of [[4, 3], [3, 4], [3, 3], [3, 2], [2, 3]]) {
+        const rx0 = dk === 1 ? ex + 1 : dk === 3 ? ex - rw : ex - (rw >> 1);
+        const ry0 = dk === 0 ? ey - rh : dk === 2 ? ey + 1 : ey - (rh >> 1);
+        if (rx0 < 3 || ry0 < 3 || rx0 + rw > n - 3 || ry0 + rh > n - 3) continue;
+        let ok = true;
+        for (let y = ry0 - 1; ok && y <= ry0 + rh; y++) for (let x = rx0 - 1; x <= rx0 + rw; x++) if (!isW(x, y)) { ok = false; break; }
+        if (ok) { cands.push({ fx, fy, ex, ey, dx, dy, dk, rw, rh, rx0, ry0, w: (dk === 0 ? 3 : 1) * rw * rh }); break; }
+      }
+    }
+  }
+  while (rooms.length < want && cands.length) {
+    let tot = 0; for (const q of cands) tot += q.w;
+    let r = Math.random() * tot, qi = 0;
+    while (r > cands[qi].w && qi < cands.length - 1) { r -= cands[qi].w; qi++; }
+    const { fx, fy, ex, ey, dx, dy, dk, rw, rh, rx0, ry0 } = cands.splice(qi, 1)[0];
+    let ok = true;
+    for (let y = ry0 - 1; ok && y <= ry0 + rh; y++) for (let x = rx0 - 1; x <= rx0 + rw; x++) if (!isW(x, y) || sec[y * n + x]) { ok = false; break; }
+    if (!ok || rooms.some(R => Math.hypot(R.cx - (rx0 + rw / 2), R.cy - (ry0 + rh / 2)) < 12)) continue;
+    const id = rooms.length + 1, tiles = [], ei = ey * n + ex;
+    for (let y = ry0; y < ry0 + rh; y++) for (let x = rx0; x < rx0 + rw; x++) { const j = y * n + x; t[j] = TF; sec[j] = id; tiles.push(j); }
+    t[ei] = TF; sec[ei] = id; tiles.push(ei);
+    const R = { id, tiles, ei, ex, ey, fx, fy, dk, cx: rx0 + rw / 2, cy: ry0 + rh / 2, found: false };
+    rooms.push(R);
+    chests.push({ k: 'chest', x: R.cx * TILE, y: R.cy * TILE, tier: 2, hidden: true, secret: id });
+    // escombros delante de la entrada y huesos/monedas dentro
+    for (let k = 0; k < 6; k++) decals.push({ x: (fx + 0.5 + dx * 0.35 + rnd(-0.35, 0.35)) * TILE, y: (fy + 0.5 + dy * 0.35 + rnd(-0.3, 0.3)) * TILE, col: pick(['#6a6a72', '#4a4a52', '#8a8478', '#5a544c']), k: 1, s: 3 + ((Math.random() * 2) | 0) });
+    for (let k = 0; k < 10; k++) decals.push({ x: (rx0 + Math.random() * rw) * TILE, y: (ry0 + Math.random() * rh) * TILE, col: pick(['#d8d0c0', '#ffd43b', '#b8b0a0']), k: (Math.random() * 2) | 0, s: 2 + ((Math.random() * 2) | 0) });
+  }
+  return rooms;
+}
+function discoverSecret(R) {
+  if (R.found) return;
+  R.found = true;
+  for (const j of R.tiles) { MAP.secClosed[j] = 0; if (MAP.fog[j]) fogPaint(j); }
+  MAP.fogC.getContext('2d').putImageData(MAP.fogImg, 0, 0);
+  MAP.ptx = -1;                                   // recalcula el campo de flujo
+  S.secrets = (S.secrets || 0) + 1;
+  banner('🗝 ¡Sala secreta!', 'Has encontrado un pasadizo oculto', 2.4, '#ffd43b');
+  ring(R.cx * TILE, R.cy * TILE, 10, 220, 0.6, '#ffd43b', 6);
+  part(R.ex * TILE + TILE / 2, R.ey * TILE + TILE / 2, '#8a8478', 18, 200, 0.6, 4);
+  AU.sfx('chest');
+}
+
+// ---------------------------------------------------------------- alturas
+// Nivel 1 = suelo base. Bosque y forja tienen mesetas (2) y a veces cumbres (3); la cripta tiene
+// criptas hundidas (0). Las rampas (MAP.ramp = 1 + dirección hacia arriba) unen un nivel con el
+// siguiente. Al final se garantiza que todo el suelo sea alcanzable (añadiendo rampas o aplanando).
+function genHeights(t, n, bio, D, secRooms, shrines, puzzles, chests, endless, c) {
+  const N = n * n, h = new Uint8Array(N).fill(1), ramp = new Uint8Array(N), forbid = new Uint8Array(N), feats = [];
+  const A = N / 4096, tI = v => Math.floor(v / TILE), floor = j => t[j] !== TW;
+  const mark = (cx, cy, r) => { for (let y = cy - r; y <= cy + r; y++) for (let x = cx - r; x <= cx + r; x++) if (x >= 0 && y >= 0 && x < n && y < n && (x - cx) ** 2 + (y - cy) ** 2 <= r * r + 1) forbid[y * n + x] = 1; };
+  mark(c, c, 7);
+  for (const sh of shrines) mark(tI(sh.x), tI(sh.y), 4);
+  for (const pz of puzzles) { mark(tI(pz.x), tI(pz.y), 4); if (pz.braz) for (const b of pz.braz) mark(tI(b.x), tI(b.y), 2); }
+  for (const ch of chests) mark(tI(ch.x), tI(ch.y), 1);
+  for (const R of secRooms) { mark(R.fx, R.fy, 2); for (const j of R.tiles) forbid[j] = 1; }
+  const nb4 = (j, f) => { const x = j % n; if (j >= n) f(j - n, 0); if (x < n - 1) f(j + 1, 1); if (j < N - n) f(j + n, 2); if (x > 0) f(j - 1, 3); };
+  const floors = []; for (let j = 0; j < N; j++) if (floor(j)) floors.push(j);
+  const farFromFeats = (x, y, d) => feats.every(f => Math.hypot(f.tx - x, f.ty - y) >= d);
+
+  // meseta irregular de nivel lv sobre baldosas de nivel lv-1
+  const raise = (cx, cy, rad, lv, ok) => {
+    const k = 2 + ((Math.random() * 3) | 0), ph = Math.random() * TAU, R = Math.ceil(rad * 1.3) + 1;
+    let out = [];
+    for (let y = cy - R; y <= cy + R; y++) for (let x = cx - R; x <= cx + R; x++) {
+      if (x < 2 || y < 2 || x >= n - 2 || y >= n - 2) continue;
+      const j = y * n + x;
+      if (!floor(j) || forbid[j] || h[j] !== lv - 1 || !ok(j)) continue;
+      const rr = rad * (1 + 0.28 * Math.sin(Math.atan2(y - cy, x - cx) * k + ph));
+      if ((x - cx) ** 2 + (y - cy) ** 2 <= rr * rr) { h[j] = lv; out.push(j); }
+    }
+    for (let pass = 0; pass < 3; pass++) out = out.filter(j => {   // fuera salientes de una baldosa
+      let s = 0; nb4(j, i => { if (!floor(i) || h[i] >= lv) s++; });
+      if (s <= 1) { h[j] = lv - 1; return false; }
+      return true;
+    });
+    return out;
+  };
+  const centroid = tiles => {
+    let sx = 0, sy = 0; for (const j of tiles) { sx += j % n; sy += (j / n) | 0; }
+    sx /= tiles.length; sy /= tiles.length;
+    let best = tiles[0], bd = 1e9;
+    for (const j of tiles) { const d = (j % n - sx) ** 2 + (((j / n) | 0) - sy) ** 2; if (d < bd) { bd = d; best = j; } }
+    return best;
+  };
+
+  // mesetas y cumbres (bosque y forja)
+  const nPl = endless ? Math.round(4.5 * A) : bio[c * n + c] === 0 ? 6 : bio[c * n + c] === 2 ? 5 : 0;
+  for (let k = 0, tries = 0; k < nPl && tries < 400; tries++) {
+    const j = pick(floors), cx = j % n, cy = (j / n) | 0;
+    if (bio[j] === 1 || D[j] < 10 || forbid[j] || h[j] !== 1 || !farFromFeats(cx, cy, 9)) continue;
+    const b = bio[j];
+    const out = raise(cx, cy, 2.6 + Math.random() * 2.4, 2, i => bio[i] === b);
+    if (out.length < 10) { for (const i of out) h[i] = 1; continue; }
+    k++;
+    const f = { type: 'meseta', lv: 2, tiles: out, tx: cx, ty: cy };
+    if (out.length >= 22 && (k === 1 || Math.random() < (b === 0 ? 0.5 : 0.35))) {
+      const inner = new Set(out.filter(i => { let ok = true; nb4(i, q => { if (floor(q) && h[q] < 2) ok = false; }); return ok; }));
+      if (inner.size >= 5) {
+        const m = centroid([...inner]);
+        const top = raise(m % n, (m / n) | 0, 1.6 + Math.random() * 0.9, 3, i => inner.has(i));
+        if (top.length >= 4) {
+          const tc = centroid(top);
+          Object.assign(f, { type: 'cima', lv: 3, top, x: (tc % n + 0.5) * TILE, y: (((tc / n) | 0) + 0.5) * TILE });
+          chests.push({ k: 'chest', x: f.x, y: f.y + 10, tier: 2, summit: true });
+        } else for (const i of top) h[i] = 2;
+      }
+    }
+    if (!f.x) { const m = centroid(out); f.x = (m % n + 0.5) * TILE; f.y = (((m / n) | 0) + 0.5) * TILE; }
+    feats.push(f);
+  }
+  // criptas hundidas (cripta): salas rectangulares un nivel por debajo
+  const nPit = endless ? Math.round(2 * A) : bio[c * n + c] === 1 ? 3 : 0;
+  for (let k = 0, tries = 0; k < nPit && tries < 600; tries++) {
+    const j = pick(floors), cx = j % n, cy = (j / n) | 0;
+    if (bio[j] !== 1 || D[j] < 10 || !farFromFeats(cx, cy, 10)) continue;
+    const rw = 5 + ((Math.random() * 3) | 0), rh = 4 + ((Math.random() * 2) | 0), x0 = cx - (rw >> 1), y0 = cy - (rh >> 1);
+    if (x0 < 3 || y0 < 3 || x0 + rw > n - 3 || y0 + rh > n - 3) continue;
+    const tiles = [];
+    for (let y = y0; y < y0 + rh; y++) for (let x = x0; x < x0 + rw; x++) {
+      const i = y * n + x;
+      if (!floor(i) || forbid[i] || h[i] !== 1 || bio[i] !== 1) { tiles.length = 0; y = 1e9; break; }
+      tiles.push(i);
+    }
+    if (!tiles.length) continue;
+    for (const i of tiles) { h[i] = 0; if (t[i] === TSLOPE) t[i] = TF; }
+    k++;
+    feats.push({ type: 'cripta', lv: 0, tiles, tx: cx, ty: cy, x0, y0, w: rw, h: rh, x: (x0 + rw / 2) * TILE, y: (y0 + rh / 2) * TILE, trig: false, done: false });
+  }
+
+  // rampas: la baldosa baja q mira (dirección d) a la alta; mejor si detrás de q hay suelo del mismo nivel
+  const rampScore = (q, d) => {
+    if (ramp[q] || !floor(q)) return -1;
+    const [dx, dy] = DIRS4[d], qx = q % n, qy = (q / n) | 0;
+    const at = (x, y) => (x < 0 || y < 0 || x >= n || y >= n) ? -1 : y * n + x;
+    const b = at(qx - dx, qy - dy), s1 = at(qx - dy, qy + dx), s2 = at(qx + dy, qy - dx);
+    let sc = Math.random();
+    if (b >= 0 && floor(b) && h[b] === h[q] && !ramp[b]) sc += 4;
+    for (const s of [s1, s2]) if (s >= 0 && floor(s)) sc += h[s] === h[q] ? 1.5 : 0.5;
+    if (forbid[q]) sc -= 1;
+    return sc;
+  };
+  const putRamp = (q, d) => {
+    ramp[q] = d + 1; if (t[q] !== TF) t[q] = TF;
+    const [dx, dy] = DIRS4[d], qx = q % n, qy = (q / n) | 0;
+    for (const sgn of [1, -1]) {                     // rampa de 2 baldosas de ancho si cabe
+      const sx = qx - dy * sgn, sy = qy + dx * sgn, s = sy * n + sx, p = (sy + dy) * n + sx + dx;
+      if (sx < 1 || sy < 1 || sx >= n - 1 || sy >= n - 1 || !floor(s) || !floor(p) || ramp[s] || h[s] !== h[q] || h[p] !== h[q] + 1) continue;
+      if (Math.random() < 0.75) { ramp[s] = d + 1; if (t[s] !== TF) t[s] = TF; }
+      break;
+    }
+  };
+  // candidatas entre dos conjuntos (unreached → reached)
+  const reach = new Int32Array(N);
+  for (let it = 0; it < 200; it++) {
+    bfsH(t, h, ramp, null, c, c, reach);
+    let best = -1, bq = -1, bd = 0, any = false;
+    for (const j of floors) {
+      if (reach[j] >= 0) continue;
+      any = true;
+      nb4(j, (i, d) => {
+        if (!floor(i) || reach[i] < 0) return;
+        let q, dd;
+        if (h[i] - h[j] === 1) { q = j; dd = d; } else if (h[j] - h[i] === 1) { q = i; dd = (d + 2) % 4; } else return;
+        const sc = rampScore(q, dd);
+        if (sc > best) { best = sc; bq = q; bd = dd; }
+      });
+    }
+    if (!any) break;
+    if (bq >= 0) { putRamp(bq, bd); continue; }
+    for (const j of floors) if (reach[j] < 0) { h[j] = 1; ramp[j] = 0; }   // sin arreglo posible: se aplana
+  }
+  // segunda rampa en las mesetas y criptas grandes (más rutas = más estrategia)
+  for (const f of feats) {
+    if (f.tiles.length < 16 || Math.random() < 0.25) continue;
+    const mine = new Set(f.tiles), cand = [];
+    let rs = [];
+    for (const j of f.tiles) nb4(j, (i, d) => {
+      if (ramp[i] || ramp[j]) rs.push(j);
+      if (!floor(i) || mine.has(i) || h[i] === h[j]) return;
+      const q = h[i] < h[j] ? i : j, dd = h[i] < h[j] ? (d + 2) % 4 : d;
+      if (Math.abs(h[i] - h[j]) === 1) cand.push([q, dd]);
+    });
+    let best = -1, pickC = null;
+    for (const [q, d] of cand) {
+      const qx = q % n, qy = (q / n) | 0;
+      if (rs.some(r => Math.hypot(r % n - qx, ((r / n) | 0) - qy) < 5)) continue;
+      const sc = rampScore(q, d); if (sc > best) { best = sc; pickC = [q, d]; }
+    }
+    if (pickC && best > 3) putRamp(pickC[0], pickC[1]);
+  }
+  return { h, ramp, feats };
 }
 
 // ---------------------------------------------------------------- texturas de muros
@@ -355,13 +603,38 @@ function makeWallFace(b, TER, v) {
 }
 
 // ---------------------------------------------------------------- física
+// Alturas: los que caminan (jugador y enemigos de a pie) llevan `lv` (su nivel) y `ti` (baldosa
+// actual). Una baldosa de otro nivel es un muro para ellos, salvo que haya rampa; con `drop`
+// (el dash) pueden saltar a una baldosa más baja y `fell` acumula los niveles caídos.
+let SOL_LO = 0, SOL_HI = 0;
+function solidFor(o, j) {
+  if (MAP.t[j] === TW) return true;
+  if (MAP.secClosed[j] && o !== P) return true;          // salas secretas: solo el jugador las abre
+  if (o.lv === undefined) return false;
+  const jl = MAP.h[j];
+  return jl > SOL_HI || (jl + (MAP.ramp[j] ? 1 : 0) < SOL_LO && !o.drop);
+}
+function syncLv(o) {
+  const i = tIdx(o.x, o.y);
+  o.ti = i < 0 ? 0 : i; o.lv = MAP.h[o.ti]; o.lx = o.x; o.ly = o.y; o.fell = 0;
+}
+// mueve en pasos cortos: nada atraviesa muros ni se queda dentro de ellos, aunque vaya muy rápido
+function moveBy(o, dx, dy) {
+  const steps = Math.max(1, Math.ceil(Math.max(Math.abs(dx), Math.abs(dy)) / 10));
+  dx /= steps; dy /= steps;
+  for (let k = 0; k < steps; k++) { o.x += dx; o.y += dy; collideWalls(o); }
+}
 function collideWalls(o) {
-  const r = o.r, n = MAPN, t = MAP.t;
+  const r = o.r, n = MAPN;
+  if (o.lv !== undefined) {
+    const c = o.ti;
+    if (MAP.ramp[c]) { SOL_LO = MAP.h[c]; SOL_HI = SOL_LO + 1; } else SOL_LO = SOL_HI = o.lv;
+  }
   const x0 = Math.floor((o.x - r) / TILE), x1 = Math.floor((o.x + r) / TILE);
   const y0 = Math.floor((o.y - r) / TILE), y1 = Math.floor((o.y + r) / TILE);
   let hit = false;
   for (let ty = y0; ty <= y1; ty++) for (let tx = x0; tx <= x1; tx++) {
-    if (tx >= 0 && ty >= 0 && tx < n && ty < n && t[ty * n + tx] !== TW) continue;
+    if (tx >= 0 && ty >= 0 && tx < n && ty < n && !solidFor(o, ty * n + tx)) continue;
     const px = clamp(o.x, tx * TILE, tx * TILE + TILE), py = clamp(o.y, ty * TILE, ty * TILE + TILE);
     const dx = o.x - px, dy = o.y - py, d2 = dx * dx + dy * dy;
     if (d2 >= r * r) continue;
@@ -373,7 +646,33 @@ function collideWalls(o) {
       else o.y = ay > 0 ? (ty + 1) * TILE + r : ty * TILE - r;
     }
   }
+  if (o.lv !== undefined) settleLv(o);
+  else if (isWall(o.x, o.y) && o.lx !== undefined) { o.x = o.lx; o.y = o.ly; }
+  else { o.lx = o.x; o.ly = o.y; }
   return hit;
+}
+// tras moverse: actualiza el nivel; si un empujón lo metió donde no debía, vuelve a su última posición válida
+function settleLv(o) {
+  const c = tIdx(o.x, o.y);
+  if (c === o.ti) { o.lx = o.x; o.ly = o.y; return; }
+  const pc = o.ti, lo = MAP.ramp[pc] ? MAP.h[pc] : o.lv, hi = MAP.ramp[pc] ? lo + 1 : o.lv;
+  if (c < 0 || MAP.t[c] === TW || (MAP.secClosed[c] && o !== P)) { o.x = o.lx; o.y = o.ly; return; }
+  const jl = MAP.h[c], jh = jl + (MAP.ramp[c] ? 1 : 0);
+  if (jl > hi || (jh < lo && !o.drop)) { o.x = o.lx; o.y = o.ly; return; }
+  if (jh < lo) o.fell = (o.fell || 0) + lo - jh;
+  o.lv = clamp(o.lv, jl, jh); o.ti = c; o.lx = o.x; o.ly = o.y;
+}
+// ¿pueden tocarse cuerpo a cuerpo? (no desde lo alto de un risco)
+function sameLevel(a, b) {
+  if (a.lv === undefined || b.lv === undefined) return true;
+  const d = Math.abs(a.lv - b.lv);
+  return d === 0 || (d === 1 && (MAP.ramp[a.ti] || MAP.ramp[b.ti]));
+}
+// ¿se puede pasar de la baldosa i a la vecina j? (campo de flujo de los enemigos)
+function linkT(i, j) {
+  if (MAP.t[j] === TW || MAP.secClosed[j]) return false;
+  const a = MAP.h[i], b = MAP.h[j];
+  return b <= a + (MAP.ramp[i] ? 1 : 0) && b + (MAP.ramp[j] ? 1 : 0) >= a;
 }
 
 // campo de flujo hacia el jugador (se recalcula al cambiar de baldosa)
@@ -381,9 +680,9 @@ function updateFlow() {
   const tx = Math.floor(P.x / TILE), ty = Math.floor(P.y / TILE);
   if (tx === MAP.ptx && ty === MAP.pty) return;
   MAP.ptx = tx; MAP.pty = ty;
-  bfs(MAP.t, clamp(tx, 0, MAPN - 1), clamp(ty, 0, MAPN - 1), MAP.flow);
+  bfsH(MAP.t, MAP.h, MAP.ramp, MAP.secClosed, clamp(tx, 0, MAPN - 1), clamp(ty, 0, MAPN - 1), MAP.flow);
   MAP.fver++;
-  reveal(tx, ty);
+  reveal(tx, ty, P.lv >= 2 ? 7.5 + (P.lv - 1) * 2.5 : P.lv === 0 ? 6 : 7.5);   // desde lo alto ves más lejos
 }
 const NAV = [0, 0];
 function navDir(e) {
@@ -398,8 +697,8 @@ function navDir(e) {
       const x = tx + dx, y = ty + dy;
       if (x < 0 || y < 0 || x >= n || y >= n) continue;
       const j = y * n + x;
-      if (MAP.t[j] === TW || f[j] < 0) continue;
-      if (dx && dy && (MAP.t[ty * n + x] === TW || MAP.t[y * n + tx] === TW)) continue;
+      if (f[j] < 0 || !linkT(i, j)) continue;
+      if (dx && dy && (!linkT(i, ty * n + x) || !linkT(i, y * n + tx))) continue;
       if (f[j] < best) { best = f[j]; bx = dx; by = dy; }
     }
     e.navI = i; e.navV = MAP.fver;
@@ -413,27 +712,36 @@ function navDir(e) {
 }
 
 // ---------------------------------------------------------------- niebla
-function reveal(tx, ty) {
-  const n = MAPN, R = 7.5, fog = MAP.fog, d = MAP.fogImg.data;
+function reveal(tx, ty, R) {
+  const n = MAPN, fog = MAP.fog;
+  R = R || 7.5;
   let changed = false;
   for (let y = Math.floor(ty - R); y <= ty + R; y++) for (let x = Math.floor(tx - R); x <= tx + R; x++) {
     if (x < 0 || y < 0 || x >= n || y >= n) continue;
     const i = y * n + x;
     if (fog[i] || (x - tx) ** 2 + (y - ty) ** 2 > R * R) continue;
     fog[i] = 1; changed = true;
-    const tt = MAP.t[i], TER = TERRAIN[BIOME_KEYS[MAP.bio[i]]];
-    const col = tt === TW ? TER.top[1] : tt === TSLOW ? TER.slow[1] : tt === THURT ? TER.hurt[1] : tt === TICE ? '#bfe8ff' : tt === TSLOPE ? '#7a7a6a' : LEVELS[MAP.bio[i]].ground[0];
-    const [r, g, b] = hexRGB(col);
-    const lift = tt === TW ? 0.7 : 1.6;
-    d[i * 4] = Math.min(255, r * lift); d[i * 4 + 1] = Math.min(255, g * lift); d[i * 4 + 2] = Math.min(255, b * lift); d[i * 4 + 3] = 255;
+    fogPaint(i);
   }
   if (changed) MAP.fogC.getContext('2d').putImageData(MAP.fogImg, 0, 0);
+}
+// color de una baldosa en el minimapa (las salas secretas se ven como muro hasta descubrirlas)
+const LV_LIFT = [0.9, 1.6, 2.0, 2.4];
+function fogPaint(i) {
+  const d = MAP.fogImg.data, tt = MAP.secClosed[i] ? TW : MAP.t[i], TER = TERRAIN[BIOME_KEYS[MAP.bio[i]]];
+  const col = tt === TW ? TER.top[1] : MAP.ramp[i] ? '#a89a78' : tt === TSLOW ? TER.slow[1] : tt === THURT ? TER.hurt[1] : tt === TICE ? '#bfe8ff' : tt === TSLOPE ? '#7a7a6a' : LEVELS[MAP.bio[i]].ground[0];
+  const [r, g, b] = hexRGB(col);
+  const lift = tt === TW ? 0.7 : LV_LIFT[MAP.h[i]] || 1.6;
+  d[i * 4] = Math.min(255, r * lift); d[i * 4 + 1] = Math.min(255, g * lift); d[i * 4 + 2] = Math.min(255, b * lift); d[i * 4 + 3] = 255;
 }
 
 // ---------------------------------------------------------------- lógica por fotograma
 function updateWorld(dt) {
+  const pi = tIdx(P.x, P.y);
+  if (pi >= 0 && MAP.secClosed[pi]) discoverSecret(MAP.secRooms[MAP.sec[pi] - 1]);
   updateFlow();
   updatePuzzles(dt);
+  updateFeats();
   P.inZone = null;
   for (const z of MAP.zones) if ((P.x - z.x) ** 2 + (P.y - z.y) ** 2 < z.r * z.r) { P.inZone = z.type; z.seen = true; }
   if (P.inZone === 'sagrada') heal(P.s.maxHp * 0.02 * dt);
@@ -564,6 +872,86 @@ function drawPuzzles(vis) {
   }
 }
 
+// ---------------------------------------------------------------- cumbres y criptas
+// Cumbre: cofre épico a la vista; al subir a la meseta salta una emboscada.
+// Cripta hundida: al bajar, los muertos despiertan; si los vences, el sarcófago se abre (cofre épico).
+function ambushTypes(bi) {
+  const L = LEVELS[bi];
+  const ok = L.spawns.map(s => s.e).filter(e => !ENEMIES[e].fly && ENEMIES[e].ai !== 'ghost' && !ENEMIES[e].split);
+  return ok.length ? ok : ['skel'];
+}
+function ambush(f, tiles, nMobs, title, sub) {
+  const n = MAPN, types = ambushTypes(MAP.bio[tiles[0]]), mobs = [];
+  const spots = tiles.filter(j => { const d = Math.hypot((j % n + 0.5) * TILE - P.x, (((j / n) | 0) + 0.5) * TILE - P.y); return d > 150 && d < 520; });
+  const pool = spots.length >= 3 ? spots : tiles;
+  for (let k = 0; k < nMobs; k++) {
+    const j = pick(pool), x = (j % n + rnd(0.25, 0.75)) * TILE, y = (((j / n) | 0) + rnd(0.25, 0.75)) * TILE;
+    const e = spawnEnemy(pick(types), x, y, k === 0);
+    mobs.push(e);
+    part(x, y, '#c8c0d8', 8, 120, 0.5, 3, -60);
+  }
+  f.mobs = mobs;
+  banner(title, sub, 2.4, '#ff8a5a');
+  AU.sfx('boss'); shake(8);
+}
+function updateFeats() {
+  const n = MAPN, extra = S.endless ? Math.min(4, S.asc || 0) : S.lvlIdx;
+  for (const f of MAP.feats) {
+    if (f.done) continue;
+    if (f.type === 'cripta') {
+      if (!f.trig) {
+        const tx = Math.floor(P.x / TILE), ty = Math.floor(P.y / TILE);
+        if (P.lv === 0 && tx >= f.x0 && ty >= f.y0 && tx < f.x0 + f.w && ty < f.y0 + f.h) {
+          f.trig = true;
+          ambush(f, f.tiles, 5 + extra, '⚰ ¡Los muertos despiertan!', 'Acaba con ellos y el sarcófago se abrirá');
+        }
+      } else if (f.mobs.every(e => e.dead)) {
+        f.done = true;
+        S.picks.push({ k: 'chest', x: f.x, y: f.y + 34, tier: 2 });
+        for (let i = 0; i < 8; i++) S.picks.push({ k: 'soul', x: f.x + rnd(-60, 60), y: f.y + rnd(-40, 60), v: 2 });
+        banner('⚰ El sarcófago se abre', 'Recoge el cofre: mejora épica o superior', 2.2, '#ffd43b');
+        ring(f.x, f.y, 10, 200, 0.6, '#ffd43b', 6); AU.sfx('chest');
+      }
+    } else if (f.type === 'cima') {
+      if (P.lv >= 2 && (f.tiles.includes(P.ti) || f.top.includes(P.ti))) {
+        f.done = true;
+        ambush(f, f.tiles.concat(f.top), 3 + extra, '⛰ ¡Emboscada en la cumbre!', 'El cofre de la cima está custodiado');
+      }
+    }
+  }
+}
+function drawFeats(vis) {
+  for (const f of MAP.feats) {
+    if (!vis(f.x, f.y, 300)) continue;
+    if (f.type === 'cripta') {
+      // velas en las esquinas y sarcófago en el centro
+      for (const [cx, cy] of [[f.x0, f.y0], [f.x0 + f.w, f.y0], [f.x0, f.y0 + f.h], [f.x0 + f.w, f.y0 + f.h]]) {
+        const x = cx * TILE + (cx === f.x0 ? 22 : -22), y = cy * TILE + (cy === f.y0 ? 30 : -16);
+        const fl = 0.85 + Math.sin(S.time * 9 + x) * 0.15;
+        ctx.drawImage(glowSpr('#ffb040'), x - 22 * fl, y - 34, 44 * fl, 44);
+        ctx.fillStyle = '#e8e0c8'; ctx.fillRect(x - 3, y - 12, 6, 12); ctx.fillStyle = '#ffd43b'; ctx.fillRect(x - 2, y - 17 * fl, 4, 5);
+      }
+      const x = f.x, y = f.y;
+      shadow(x, y + 22, 40);
+      ctx.fillStyle = '#1a1c2b'; ctx.fillRect(x - 38, y - 22, 76, 46);
+      ctx.fillStyle = '#4a5068'; ctx.fillRect(x - 35, y - 19, 70, 40);
+      const lid = f.done ? 26 : 0;
+      ctx.fillStyle = '#626a88'; ctx.fillRect(x - 33 + lid, y - 26 - lid * 0.3, 66, 30);
+      ctx.fillStyle = '#8a92b8'; ctx.fillRect(x - 33 + lid, y - 26 - lid * 0.3, 66, 4);
+      ctx.fillStyle = '#2a2f45'; ctx.fillRect(x - 3 + lid, y - 20 - lid * 0.3, 6, 18); ctx.fillRect(x - 10 + lid, y - 14 - lid * 0.3, 20, 5);   // cruz
+      if (f.trig && !f.done) { ctx.globalAlpha = 0.4 + Math.sin(S.time * 5) * 0.2; ctx.drawImage(glowSpr('#8a6aff'), x - 50, y - 50, 100, 80); ctx.globalAlpha = 1; }
+    } else if (f.type === 'cima') {
+      // mástil con estandarte: se ve desde lejos
+      const x = f.x + 34, y = f.y - 6, w = Math.sin(S.time * 3) * 3;
+      shadow(x, y + 4, 10);
+      ctx.fillStyle = '#3a281a'; ctx.fillRect(x - 2, y - 58, 4, 60);
+      ctx.fillStyle = f.done ? '#ff4a4a' : '#ffd43b';
+      ctx.beginPath(); ctx.moveTo(x + 2, y - 58); ctx.lineTo(x + 30, y - 50 + w); ctx.lineTo(x + 2, y - 40); ctx.fill();
+      ctx.fillStyle = '#6a6a72'; ctx.fillRect(x - 8, y - 4, 16, 6);
+    }
+  }
+}
+
 function spawnGuardian(sh) {
   const spawns = MAP.endless ? LEVELS[MAP.bio[tIdx(sh.x, sh.y)]].spawns : S.L.spawns;
   const heavy = spawns.map(s => s.e).filter(t => !['imp', 'bat', 'icebat', 'slime'].includes(t));
@@ -634,21 +1022,106 @@ function drawTerrain(x0, y0, x1, y1) {
   // sombra que proyectan los muros sobre el suelo (da profundidad)
   ctx.fillStyle = 'rgba(0,0,0,0.28)';
   for (let ty = ty0; ty <= ty1; ty++) for (let tx = tx0; tx <= tx1; tx++) {
-    if (MAP.t[ty * n + tx] !== TW || ty + 1 >= n || MAP.t[(ty + 1) * n + tx] === TW) continue;
+    if (!wallLike(ty * n + tx) || ty + 1 >= n || wallLike((ty + 1) * n + tx)) continue;
     ctx.fillRect(tx * TILE, (ty + 1) * TILE, TILE, 14);
   }
+}
+// ---------------------------------------------------------------- alturas (dibujo)
+// Cada nivel tiñe el suelo (más claro arriba, oscuro en las criptas); donde una baldosa alta
+// queda al norte de una baja se ve el risco (FACE_H px por nivel); los demás bordes llevan
+// un brillo arriba y sombra abajo. Las rampas son escalones con barandillas.
+const FACE_H = 28;
+const CLIFFTEX = {};
+function cliffTex(b) {
+  if (CLIFFTEX[b]) return CLIFFTEX[b];
+  const TER = TERRAIN[BIOME_KEYS[b]], h = FACE_H * 3, c = newCanvas(TILE * 2, h), x = c.getContext('2d');
+  x.fillStyle = b === 0 ? '#3a2e22' : TER.face[0]; x.fillRect(0, 0, TILE * 2, h);
+  if (b === 0) {            // tierra con piedras y raíces
+    for (let k = 0; k < 26; k++) { x.fillStyle = pick(['#4a3a2a', '#2a2018', '#5a5048']); x.fillRect(Math.floor(Math.random() * 40) * 4, Math.floor(Math.random() * 16) * 4, 8, 4); }
+    x.fillStyle = '#24401f'; for (let k = 0; k < 12; k++) x.fillRect(Math.random() * 156, 0, 4, 4 + Math.random() * 10);
+  } else if (b === 1) {     // sillería
+    x.fillStyle = TER.face[1];
+    for (let row = 0; row < 7; row++) { x.fillRect(0, row * 10 + 9, TILE * 2, 1); for (let col = 0; col < 10; col++) x.fillRect(col * 16 + (row % 2) * 8, row * 10, 1, 10); }
+  } else {                  // basalto con vetas
+    x.fillStyle = TER.face[1]; for (let k = 0; k < 12; k++) x.fillRect(k * 14 + Math.random() * 4, 0, 2, h);
+    for (let k = 0; k < 3; k++) { x.fillStyle = '#ff5a1a'; const lx = 10 + Math.random() * 140; x.fillRect(lx, Math.random() * 30, 3, 10 + Math.random() * 14); }
+  }
+  return (CLIFFTEX[b] = c);
+}
+function drawHeights(x0, y0, x1, y1) {
+  const n = MAPN, h = MAP.h, rp = MAP.ramp;
+  const [tx0, tx1, ty0, ty1] = visTiles(x0, y0, x1, y1);
+  const fl = j => !wallLike(j);
+  const top = j => h[j] + (rp[j] ? 1 : 0);
+  for (let ty = ty0; ty <= ty1; ty++) for (let tx = tx0; tx <= tx1; tx++) {
+    const i = ty * n + tx; if (!fl(i)) continue;
+    const L = h[i], x = tx * TILE, y = ty * TILE;
+    if (L !== 1 && !rp[i]) { ctx.fillStyle = L === 0 ? 'rgba(4,4,14,0.45)' : L === 2 ? 'rgba(255,248,215,0.12)' : 'rgba(255,248,215,0.22)'; ctx.fillRect(x, y, TILE, TILE); }
+    if (rp[i]) drawRamp(i, x, y);
+  }
+  for (let ty = ty0; ty <= ty1; ty++) for (let tx = tx0; tx <= tx1; tx++) {
+    const i = ty * n + tx; if (!fl(i)) continue;
+    const L = h[i], T = top(i), x = tx * TILE, y = ty * TILE, b = MAP.bio[i], TER = TERRAIN[BIOME_KEYS[b]];
+    // norte más alto → risco sobre esta baldosa
+    if (ty > 0) {
+      const j = i - n;
+      if (fl(j) && h[j] > T) {
+        const fh = FACE_H * Math.min(3, h[j] - L);
+        ctx.drawImage(cliffTex(b), (tx % 2) * TILE, 0, TILE, fh, x, y, TILE, fh);
+        ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.fillRect(x, y + fh - 4, TILE, 4);
+        ctx.fillStyle = 'rgba(0,0,0,0.2)'; ctx.fillRect(x, y + fh, TILE, 10);
+        ctx.fillStyle = rgba(TER.rim, 0.8); ctx.fillRect(x, y - 2, TILE, 3);
+      } else if (fl(j) && top(j) < L) {          // borde norte de la meseta
+        ctx.fillStyle = 'rgba(0,0,0,0.45)'; ctx.fillRect(x, y - 3, TILE, 3);
+        ctx.fillStyle = rgba(TER.rim, 0.7); ctx.fillRect(x, y, TILE, 4);
+      }
+    }
+    // lados: brillo en el borde alto, sombra en el bajo
+    for (const [dx, xe] of [[-1, x], [1, x + TILE]]) {
+      const nx = tx + dx; if (nx < 0 || nx >= n) continue;
+      const j = i + dx; if (!fl(j) || linkT(i, j)) continue;
+      if (h[j] < L) {                              // borde lateral: brillo, línea oscura y sombra sobre lo bajo
+        ctx.fillStyle = rgba(TER.rim, 0.65); ctx.fillRect(dx < 0 ? xe : xe - 4, y, 4, TILE);
+        ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(dx < 0 ? xe - 3 : xe, y, 3, TILE);
+        ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.fillRect(dx < 0 ? xe - 14 : xe + 3, y, 11, TILE);
+      }
+    }
+  }
+}
+function drawRamp(i, x, y) {
+  const d = MAP.ramp[i] - 1, TER = TERRAIN[BIOME_KEYS[MAP.bio[i]]];
+  ctx.save(); ctx.translate(x + TILE / 2, y + TILE / 2); ctx.rotate(d * Math.PI / 2);
+  // en coordenadas locales la rampa sube hacia -y
+  for (let k = 0; k < 5; k++) {
+    const sy = 40 - (k + 1) * 16;
+    ctx.fillStyle = `rgba(255,248,215,${0.04 + k * 0.035})`; ctx.fillRect(-40, sy, 80, 16);
+    ctx.fillStyle = 'rgba(0,0,0,0.28)'; ctx.fillRect(-40, sy + 13, 80, 3);
+    ctx.fillStyle = 'rgba(255,255,255,0.12)'; ctx.fillRect(-40, sy, 80, 2);
+  }
+  ctx.fillStyle = TER.face[0];
+  const n = MAPN, side = (sx, sy) => { const tx = Math.floor(x / TILE) + sx, ty = Math.floor(y / TILE) + sy; return tx >= 0 && ty >= 0 && tx < n && ty < n && MAP.ramp[ty * n + tx] === MAP.ramp[i]; };
+  const [px, py] = DIRS4[(d + 1) % 4];          // vecino a la "derecha" local (+x)
+  if (!side(px, py)) ctx.fillRect(34, -40, 6, 80);
+  if (!side(-px, -py)) ctx.fillRect(-40, -40, 6, 80);
+  ctx.restore();
 }
 function pushWalls(list, x0, y0, x1, y1) {
   const n = MAPN, [tx0, tx1, ty0, ty1] = visTiles(x0, y0, x1, y1 + 40);
   for (let ty = ty0; ty <= ty1; ty++) for (let tx = tx0; tx <= tx1; tx++)
-    if (MAP.t[ty * n + tx] === TW) list.push({ kind: 'wall', tx, ty, y: (ty + 1) * TILE - 1 });
+    if (wallLike(ty * n + tx)) list.push({ kind: 'wall', tx, ty, y: (ty + 1) * TILE - 1 });
 }
+// muro de verdad o sala secreta aún cerrada (se dibuja igual que la roca)
+const wallLike = i => MAP.t[i] === TW || MAP.secClosed[i] === 1;
+// ¿este objeto (dibujado después del jugador) le tapa? entonces se vuelve translúcido
+function coversPlayer(x0, y0, x1, y1) { return P.x + 20 > x0 && P.x - 20 < x1 && P.y + 14 > y0 && P.y - 46 < y1; }
 function drawWall(o) {
   const n = MAPN, tx = o.tx, ty = o.ty, x = tx * TILE, y = ty * TILE, t = MAP.t, i = ty * n + tx;
   const b = MAP.bio[i], tex = wallTex(b), h = hash2(tx, ty), TER = TERRAIN[BIOME_KEYS[b]];
-  const W_ = (xx, yy) => xx < 0 || yy < 0 || xx >= n || yy >= n || t[yy * n + xx] === TW;
+  const W_ = (xx, yy) => xx < 0 || yy < 0 || xx >= n || yy >= n || wallLike(yy * n + xx);
   const up = W_(tx, ty - 1), dn = W_(tx, ty + 1), lf = W_(tx - 1, ty), rt = W_(tx + 1, ty);
   const top = y - WALLH;
+  const see = o.y > P.y && coversPlayer(x, top, x + TILE, y + TILE);
+  if (see) { ctx.globalAlpha = 0.38; if (P.x > x && P.x < x + TILE && P.y - 18 > top) P.occl = true; }   // tapa el centro del jugador: silueta
   ctx.drawImage(tex.tops[h % 4], x, top);
   if (!dn) {
     const fv = (h >>> 3) % 3;
@@ -669,6 +1142,29 @@ function drawWall(o) {
   };
   if (!up && !lf) stair(x, top, 1, 1);
   if (!up && !rt) stair(x + TILE, top, -1, 1);
+  // entrada de sala secreta: roca agrietada y una corriente de aire tenue
+  if (MAP.sec[i] && MAP.secClosed[i] && MAP.secRooms[MAP.sec[i] - 1].ei === i) drawSecretCracks(x, y, top, !dn, b);
+  ctx.globalAlpha = 1;
+}
+function drawSecretCracks(x, y, top, faceVisible, b) {
+  const crack = b === 0 ? '#060c05' : b === 1 ? '#0b0c16' : '#0e0403', edge = b === 0 ? '#6a9a50' : b === 1 ? '#a8b0d0' : '#c87a50';
+  const zig = (sx, sy, pts) => {
+    let cx = sx, cy = sy;
+    for (const [dx, dy] of pts) { ctx.fillStyle = edge; ctx.fillRect(cx + 4, cy, 2, 4); ctx.fillStyle = crack; ctx.fillRect(cx, cy, 4, 4); cx += dx; cy += dy; }
+  };
+  zig(x + 22, top + 10, [[4, 4], [4, 0], [0, 4], [4, 4], [-4, 4], [0, 4], [4, 4], [0, 4]]);
+  zig(x + 54, top + 14, [[-4, 4], [0, 4], [-4, 4], [4, 4], [0, 4], [-4, 4], [0, 4]]);
+  zig(x + 36, top + 30, [[4, 0], [4, 4], [4, 0], [0, 4]]);
+  if (faceVisible) {           // fachada: un arco tapiado con piedras sueltas
+    const fy = y + TILE - WALLH;
+    ctx.fillStyle = '#07050a'; ctx.fillRect(x + 22, fy + 6, 36, WALLH - 6); ctx.fillRect(x + 26, fy + 2, 28, 4); ctx.fillRect(x + 32, fy - 2, 16, 4);
+    const st = b === 1 ? ['#6a7090', '#555c78'] : b === 0 ? ['#5a4a34', '#4a3a28'] : ['#6a4030', '#5a3326'];
+    for (let k = 0; k < 7; k++) { ctx.fillStyle = st[k % 2]; ctx.fillRect(x + 24 + (k % 4) * 8, fy + 8 + Math.floor(k / 4) * 9, 7, 7); }
+  }
+  const a = 0.18 + Math.sin(S.time * 2.2 + x) * 0.1;
+  const pa = ctx.globalAlpha; ctx.globalAlpha = pa * a;
+  ctx.drawImage(glowSpr(b === 2 ? '#ffb070' : '#bfe8ff'), x + 10, faceVisible ? y + 20 : top + 10, 60, 50);
+  ctx.globalAlpha = pa;
 }
 function drawTrapsZones(vis) {
   for (const z of MAP.zones) {
@@ -712,11 +1208,28 @@ function drawFog(x0, y0, x1, y1) {
     ctx.fillRect(tx * TILE - 1, ty * TILE - WALLH - 1, TILE + 2, TILE + 2);
   }
 }
+function heightHint() {
+  const n = MAPN, i = P.ti;
+  if (MAP.ramp[i]) return [MAP.bio[i] === 1 ? 'Escalera: une dos niveles' : 'Rampa: une dos niveles', '#e8dcc0'];
+  // al borde de un risco: avisa de que el dash salta
+  const tx = i % n, ty = (i / n) | 0, lx = P.x - tx * TILE, ly = P.y - ty * TILE;
+  for (const [d, near] of [[0, ly < 30], [1, lx > TILE - 30], [2, ly > TILE - 30], [3, lx < 30]]) {
+    if (!near) continue;
+    const [dx, dy] = DIRS4[d], x = tx + dx, y = ty + dy;
+    if (x < 0 || y < 0 || x >= n || y >= n) continue;
+    const j = y * n + x;
+    if (!wallLike(j) && MAP.h[j] + (MAP.ramp[j] ? 1 : 0) < P.lv) return ['⬇ Risco: usa el dash para saltar abajo (la caída hace daño)', '#ffb070'];
+  }
+  if (P.lv === 0) return ['⚰ Cripta hundida: sal por la escalera', '#a8a0d8'];
+  if (P.lv >= 2) return ['⛰ Terreno elevado: +15% daño a los de abajo y ves más lejos', '#ffe9a8'];
+  return null;
+}
 function terrainHint() {
   if (!MAP) return null;
   const ph = puzzleHint(); if (ph) return ph;
   const tt = tileAt(P.x, P.y), TER = terAt(P.x, P.y);
   if (P.inZone) return [ZONES[P.inZone].n + ': ' + ZONES[P.inZone].d, ZONES[P.inZone].c];
+  const hh = heightHint(); if (hh) return hh;
   if (tt === TSLOW) return [TER.slow[0] + ': -45% velocidad', '#d8d0b0'];
   if (tt === THURT) return [TER.hurt[0] + ': daño continuo (también a enemigos)', TER.hurt[1]];
   if (tt === TICE) return [TER.ice + ': cuesta frenar', '#bfe8ff'];

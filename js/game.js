@@ -186,6 +186,8 @@ function startRun(clsId, startLvl, endless) {
   P.dpsEst = estimateDps();
   const DF = DIFFS[SAVE.settings.diff] || DIFFS.normal;
   S = { kills: 0, souls: 0, runTime: 0, mods: { hp: DF.hp, spawn: DF.spawn, xp: DF.xp, dmg: DF.dmg, soul: 1 }, diff: DF, endless: !!endless, press: 0, pressT: 0, pendingLv: 0, startLvl: endless ? 0 : startLvl, cleared: 0, dmgDone: 0, dmgBy: {}, chestQueue: [], soulsEarned: 0, shopBuys: {}, combo: 0, comboT: 0, bestCombo: 0, hemo: 0 };
+  if (DF.rerolls != null) P.rerolls = DF.rerolls;
+  if (DF.magnet) { P.b.magnet *= DF.magnet; recalc(); }
   if (!endless && startLvl > 0) {  // niveles de prueba: empiezas con subidas de nivel acumuladas
     S.pendingLv = startLvl === 1 ? 9 : 19;
     P.lvl += S.pendingLv; P.xpNext = xpNeed(P.lvl);
@@ -220,7 +222,7 @@ function loadLevel(i) {
     slowmo: 0, shake: 0, banner: null, nextId: 1, embers: [], timeSlow: 0,
   });
   genMap(L, endless);                 // define WORLD según el modo
-  P.x = WORLD / 2 + TILE / 2; P.y = WORLD / 2 + TILE / 2; P.dashT = 0; P.iframes = 1.5; P.vx = P.vy = 0;
+  P.x = WORLD / 2 + TILE / 2; P.y = WORLD / 2 + TILE / 2; P.dashT = 0; P.iframes = 1.5; P.vx = P.vy = 0; syncLv(P);
   cam.x = P.x; cam.y = P.y;
   S.props = MAP.props; S.decals = MAP.decals; S.shrines = MAP.shrines;
   for (const ch of MAP.chests) S.picks.push(ch);
@@ -337,6 +339,7 @@ function hitEnemy(e, base, o) {
     crit = o.crit !== undefined ? o.crit : Math.random() < critChance() + (o.critB || 0);
     if (crit) { d *= P.s.critMult; if (P.hyb.filogel && (e.slowT > 0 || e.freezeT > 0)) d *= 1.75; }
     d *= rnd(0.9, 1.1);
+    if (e.lv !== undefined && P.lv > e.lv) d *= 1.15;   // ventaja de altura
   }
   const dealt = Math.min(d, Math.max(0, e.hp)), src = o.src || SRC;
   e.hp -= d; e.flash = 0.08; S.dmgDone += dealt;
@@ -389,9 +392,11 @@ function chain(from, dmg, jumps) {
 }
 // Curación: las "de golpe" (corazón, fuente, elixir…) son libres; las pasivas (robo de vida,
 // regeneración, vampirismo…) comparten un tope por segundo y se reducen a la mitad tras recibir un golpe.
-function healCap() { return P.s.maxHp * 0.025 + 2; }
+const healMul = () => (S && S.diff && S.diff.heal) || 1;
+function healCap() { return (P.s.maxHp * 0.025 + 2) * healMul(); }
 function heal(v, burst) {
   if (P.hp >= P.s.maxHp) return;
+  v *= healMul();
   if (!burst) {
     if (P.woundT > 0) v *= 0.5;                 // herida reciente
     v = Math.min(v, P.healBudget);
@@ -424,11 +429,12 @@ function killEnemy(e) {
   dropGem(e.x, e.y, e.xp);
   const luck = 1 + P.s.luck / 100;
   const count = k => { let c = 0; for (const p of S.picks) if (p.k === k) c++; return c; };
-  if (Math.random() < 0.012 * luck && count('heart') < 3) { const sp = safeSpot(e.x, e.y); S.picks.push({ k: 'heart', x: sp.x, y: sp.y, life: 15 }); }
+  const DF = S.diff;
+  if (Math.random() < 0.012 * luck * (DF.heartCh || 1) && count('heart') < (DF.hearts || 3)) { const sp = safeSpot(e.x, e.y); S.picks.push({ k: 'heart', x: sp.x, y: sp.y, life: 15 }); }
   if (Math.random() < 0.07 * luck) S.picks.push({ k: 'soul', x: e.x + rnd(-6, 6), y: e.y + rnd(-6, 6), v: e.elite ? 6 : 1, life: 30 });
-  if (Math.random() < 0.0025 * luck && count('magnet') < 1) { const sp = safeSpot(e.x, e.y); S.picks.push({ k: 'magnet', x: sp.x, y: sp.y, life: 20 }); }
+  if (!DF.noMagnet && Math.random() < 0.0025 * luck && count('magnet') < 1) { const sp = safeSpot(e.x, e.y); S.picks.push({ k: 'magnet', x: sp.x, y: sp.y, life: 20 }); }
   if (e.guardian) { for (let i = 0; i < 8; i++) S.picks.push({ k: 'soul', x: e.x + rnd(-40, 40), y: e.y + rnd(-40, 40), v: 2 }); }
-  else if (e.elite && (!e.randomElite || Math.random() < 0.35)) { const sp = safeSpot(e.x, e.y); S.picks.push({ k: 'chest', x: sp.x, y: sp.y, tier: 1 }); banner('¡Élite derrotado!', 'Recoge el cofre', 1.5, '#ffd43b'); }
+  else if (e.elite && Math.random() < DF.chest * (e.randomElite ? 0.5 : 1)) { const sp = safeSpot(e.x, e.y); S.picks.push({ k: 'chest', x: sp.x, y: sp.y, tier: 1 }); banner('¡Élite derrotado!', 'Recoge el cofre', 1.5, '#ffd43b'); }
   // escuelas
   const sc = P.schools;
   if (sc.fuego >= 6 && e.burnT > 0) S.booms.push({ x: e.x, y: e.y, r: 70 * P.s.area, d: (15 + P.lvl * 2.5) * P.s.dmg * (1 + P.s.burnBonus * 0.5), src: 'fuego' });   // escala con el jugador, no con el enemigo (evita reacciones en cadena infinitas)
@@ -506,6 +512,14 @@ function hurtPlayer(d, src, dot) {
 // =====================================================================
 //  JUGADOR
 // =====================================================================
+// caída desde un risco: más alto, más duele (nunca te mata)
+function fallDamage(k) {
+  const d = Math.min(P.hp - 1, P.s.maxHp * (0.05 * k + 0.03 * k * k));
+  if (d > 0) { P.hp -= d; txt(P.x, P.y - 30, '-' + Math.round(d) + ' caída', '#ffb070', 15); }
+  P.hurtFlash = 0.2; P.woundT = 1.5; shake(5 + k * 4); AU.sfx('hurt');
+  ring(P.x, P.y + 8, 6, 50 + k * 20, 0.35, '#c8b898', 4);
+  part(P.x, P.y + 8, '#a89a78', 10 + k * 6, 160, 0.45, 4);
+}
 function mouseWorld() { return { x: cam.x + (mouse.x - W / 2) / ZOOM, y: cam.y + (mouse.y - H / 2) / ZOOM }; }
 
 function updatePlayer(dt) {
@@ -525,9 +539,10 @@ function updatePlayer(dt) {
   if (P.ultT > 0) { P.ultT -= dt; ultTick(dt); }
   if (P.dashCh < s.dashes) { P.dashRe += dt; if (P.dashRe >= dashCd()) { P.dashRe = 0; P.dashCh++; } }
 
+  P.drop = P.dashT > 0;                         // con dash puedes saltar desde un risco
   if (P.dashT > 0) {
     P.dashT -= dt;
-    P.x += P.dvx * dt; P.y += P.dvy * dt;
+    moveBy(P, P.dvx * dt, P.dvy * dt);
     if (Math.random() < 0.8) part(P.x, P.y, P.schools.tormenta >= 6 ? '#ffe14a' : '#c9d6ff', 1, 30, 0.3, 4);
     if (P.hyb.fantasma) for (const e of query(P.x, P.y, 40).slice()) {
       if (e.dead || e.dashHit === P.dashId || (e.x - P.x) ** 2 + (e.y - P.y) ** 2 > (40 + e.r) ** 2) continue;
@@ -540,8 +555,9 @@ function updatePlayer(dt) {
       * (tt === TSLOW ? 0.55 : 1) * (P.chillT > 0 ? 0.5 : 1);
     const acc = tt === TICE ? 2.2 : 40;   // en hielo cuesta frenar y girar
     P.vx += (mx * spd - P.vx) * Math.min(1, dt * acc); P.vy += (my * spd - P.vy) * Math.min(1, dt * acc);
-    P.x += P.vx * dt; P.y += P.vy * dt;
-    if (tt === TSLOPE) { const a = MAP.dir[tIdx(P.x, P.y)] || 0; P.x += Math.cos(a) * 130 * dt; P.y += Math.sin(a) * 130 * dt; }
+    let ddx = P.vx * dt, ddy = P.vy * dt;
+    if (tt === TSLOPE) { const a = MAP.dir[tIdx(P.x, P.y)] || 0; ddx += Math.cos(a) * 130 * dt; ddy += Math.sin(a) * 130 * dt; }
+    moveBy(P, ddx, ddy);
     if (tt === THURT) { P.terrT -= dt; if (P.terrT <= 0) { P.terrT = 0.5; hurtPlayer(terAt(P.x, P.y).hurt[2] * 0.5 * S.L.dmg, null, true); } }
     if (P.moving) P.walkT += dt * 12;
   }
@@ -549,7 +565,9 @@ function updatePlayer(dt) {
   P.chillT -= dt; P.warcryT -= dt; P.smokeT -= dt;
   collideProps(P);
   collideWalls(P);
+  P.drop = false;
   P.x = clamp(P.x, 30, WORLD - 30); P.y = clamp(P.y, 30, WORLD - 30);
+  if (P.fell) { fallDamage(P.fell); P.fell = 0; }
   if (s.regen > 0) heal(s.regen * dt);
 
   // ataque primario
@@ -721,7 +739,7 @@ function trySecondary() {
     const R = 120 * s.area;
     aoe(P.x, P.y, R, 30, { kb: 300 }); ring(P.x, P.y, 10, R, 0.35, '#b066ff', 6);
     part(P.x, P.y, '#b066ff', 16, 220, 0.4, 4);
-    P.x = tx; P.y = ty; P.vx = P.vy = 0; P.iframes = Math.max(P.iframes, 0.4);
+    P.x = tx; P.y = ty; P.vx = P.vy = 0; P.iframes = Math.max(P.iframes, 0.4); syncLv(P);   // el parpadeo sí sube riscos
     aoe(P.x, P.y, R, 30, { kb: 300 }); ring(P.x, P.y, 10, R, 0.35, '#b066ff', 6);
     AU.sfx('dash');
   } else if (id === 'humo') {
@@ -1020,6 +1038,7 @@ function spawnEnemy(type, x, y, elite) {
     kvx: 0, kvy: 0, flash: 0, slowT: 0, slowAmt: 0, freezeT: 0, burnT: 0, burnDps: 0, burnTick: 0.5,
     t: rnd(0.5, 2), st: 'move', face: 0, wob: Math.random() * TAU, dead: false, z: 0,
   };
+  if (!d.fly && d.ai !== 'ghost') syncLv(e);   // los de a pie respetan alturas
   S.enemies.push(e);
   return e;
 }
@@ -1051,7 +1070,7 @@ function director(dt) {
       if (S.enemies.length >= maxE) continue;
       // tras una ascensión, las hordas del infinito mezclan enemigos de los 3 biomas
       const list = S.endless && S.asc > 0 && Math.random() < 0.3 ? pick(LEVELS).spawns.filter(s => t >= s.t) : avail;
-      const eliteCh = 0.001 + P.lvl * 0.0001 + (S.asc || 0) * 0.002;
+      const eliteCh = (0.001 + P.lvl * 0.0001 + (S.asc || 0) * 0.002) * (S.diff.elite || 1);
       const e = spawnRandomAround(wpick(list.length ? list : avail, s => s.w).e, Math.random() < eliteCh);
       if (e && e.elite) e.randomElite = true;
     }
@@ -1201,7 +1220,8 @@ function updateEnemies(dt) {
         }
       }
     }
-    e.x += (vx * mv + e.kvx) * dt; e.y += (vy * mv + e.kvy) * dt;
+    if (walker) moveBy(e, (vx * mv + e.kvx) * dt, (vy * mv + e.kvy) * dt);
+    else { e.x += (vx * mv + e.kvx) * dt; e.y += (vy * mv + e.kvy) * dt; }
     const kd = Math.exp(-dt * 9); e.kvx *= kd; e.kvy *= kd;
     // separación ligera entre vecinos
     const cx = clamp(Math.floor(e.x / CELL), 0, GC - 1), cy = clamp(Math.floor(e.y / CELL), 0, GR - 1);
@@ -1215,12 +1235,12 @@ function updateEnemies(dt) {
     }
     if (walker) {
       collideProps(e); collideWalls(e);
-      if (isWall(e.x, e.y)) { const f = randomFloorAround(e.x, e.y, 30, 200, 8); if (f) { e.x = f.x; e.y = f.y; } }  // rescate si quedó dentro de un muro
+      if (isWall(e.x, e.y)) { const f = randomFloorAround(e.x, e.y, 30, 200, 8); if (f) { e.x = f.x; e.y = f.y; syncLv(e); } }  // rescate si quedó dentro de un muro
     }
     e.x = clamp(e.x, 20, WORLD - 20); e.y = clamp(e.y, 20, WORLD - 20);
     // contacto
     const rr = e.r + P.r;
-    if ((e.x - px) ** 2 + (e.y - py) ** 2 < rr * rr) hurtPlayer(e.dmg, e);
+    if ((e.x - px) ** 2 + (e.y - py) ** 2 < rr * rr && sameLevel(e, P)) hurtPlayer(e.dmg, e);
   }
   // explosiones diferidas (fuego II) — evita recursión en cadena
   if (S.booms.length) {
@@ -1691,8 +1711,10 @@ function render() {
   ctx.globalAlpha = 1;
 
   drawTerrain(x0, y0, x1, y1);
+  drawHeights(x0, y0, x1, y1);
   drawTrapsZones(vis);
   drawPuzzles(vis);
+  drawFeats(vis);
   // zonas y advertencias (capa de suelo)
   for (const f of S.fx) {
     if (f.k === 'smoke') {
@@ -1805,14 +1827,20 @@ function render() {
   for (const e of S.enemies) if (!e.dead && vis(e.x, e.y, 120)) list.push(e);
   list.push(P);
   list.sort((a, b) => a.y - b.y);
+  P.occl = false;
   for (const o of list) {
     if (o.kind === 'wall') drawWall(o);
     else if (o.kind === 'prop') {
       shadow(o.x, o.y, o.r * 1.1);
-      drawSpr(o.spr, o.x, o.y + o.r * 0.35, o.sc, 0);
+      const w = o.spr.w * o.sc, hh = o.spr.h * o.sc, by = o.y + o.r * 0.35;
+      if (o.y > P.y && coversPlayer(o.x - w / 2, by - hh, o.x + w / 2, by)) ctx.globalAlpha = 0.45;   // árboles y rocas que te tapan
+      drawSpr(o.spr, o.x, by, o.sc, 0);
+      ctx.globalAlpha = 1;
     } else if (o === P) drawPlayer();
     else drawEnemy(o);
   }
+  // si algo te tapa, tu silueta se ve a través
+  if (P.occl) { ctx.globalAlpha = 0.5; drawSpr(getSpr(P.C.spr, P.pal), P.x, P.y + 12, 3, P.face, { white: true }); ctx.globalAlpha = 1; }
 
   // orbes
   const orb = P.weapons.find(w => w.id === 'orbes');
@@ -1978,7 +2006,10 @@ function lighting() {
   const b = S.L.biome;
   const px = W / 2 + (P.x - cam.x) * ZOOM, py = H / 2 + (P.y - cam.y) * ZOOM;
   let g;
-  if (b === 'crypt') {
+  if (P.lv === 0) {                              // dentro de una cripta hundida
+    g = ctx.createRadialGradient(px, py, 110 * ZOOM, px, py, 430 * ZOOM);
+    g.addColorStop(0, 'rgba(4,4,14,0)'); g.addColorStop(1, 'rgba(4,4,14,0.9)');
+  } else if (b === 'crypt') {
     g = ctx.createRadialGradient(px, py, 140 * ZOOM, px, py, 560 * ZOOM);
     g.addColorStop(0, 'rgba(5,8,22,0)'); g.addColorStop(1, 'rgba(5,8,22,0.82)');
   } else if (b === 'forge') {
@@ -2112,7 +2143,7 @@ function drawHUD() {
   if (!T) hudText('TAB: build · ESC: pausa', W - 14, H - 14, 10, '#778', 'right');
   // indicadores fuera de pantalla
   const ind = [];
-  for (const p of S.picks) if (p.k === 'chest' && (!p.hidden || revealedAt(p.x, p.y))) ind.push([p.x, p.y, '#ffd43b']);
+  for (const p of S.picks) if (p.k === 'chest' && chestKnown(p)) ind.push([p.x, p.y, '#ffd43b']);
   if (S.portal) ind.push([S.portal.x, S.portal.y, '#b066ff']);
   if (S.boss) ind.push([S.boss.x, S.boss.y, '#ff4a4a']);
   for (const e of S.enemies) if (e.elite) ind.push([e.x, e.y, '#ffb020']);
@@ -2144,6 +2175,8 @@ function drawHUD() {
   ctx.fillStyle = '#ff4a6a'; ctx.fillRect(mouse.x - 1.5, mouse.y - 1.5, 3, 3);
 }
 
+// los cofres de sala secreta no se delatan hasta encontrar la sala
+function chestKnown(p) { return (!p.hidden || revealedAt(p.x, p.y)) && (!p.secret || MAP.secRooms[p.secret - 1].found); }
 function drawMinimap() {
   const T = TOUCH.on, mm = T ? Math.min(120, Math.round(H * 0.27)) : Math.min(170, Math.round(H * 0.24));
   const x0 = T ? W - TOUCH.safe.r - 58 - mm : W - mm - 14, y0 = T ? 76 : H - mm - 30, k = mm / WORLD;   // en móvil, arriba a la derecha
@@ -2157,7 +2190,7 @@ function drawMinimap() {
   for (const pz of MAP.puzzles) if (!pz.solved && revealedAt(pz.x, pz.y)) { ctx.fillStyle = '#5bffd0'; ctx.fillRect(x0 + pz.x * k - 3, y0 + pz.y * k - 3, 6, 6); ctx.fillStyle = '#000'; ctx.fillRect(x0 + pz.x * k - 1, y0 + pz.y * k - 1, 2, 2); }
   for (const sh of S.shrines) if (revealedAt(sh.x, sh.y)) { ctx.fillStyle = sh.used ? '#4a4458' : SHRINES[sh.type].c; ctx.fillRect(x0 + sh.x * k - 3, y0 + sh.y * k - 3, 6, 6); }
   for (const e of S.enemies) if (e.elite && revealedAt(e.x, e.y)) { ctx.fillStyle = '#ffb020'; ctx.fillRect(x0 + e.x * k - 2, y0 + e.y * k - 2, 5, 5); }
-  for (const p of S.picks) if (p.k === 'chest' && revealedAt(p.x, p.y)) { ctx.fillStyle = '#ffd43b'; ctx.fillRect(x0 + p.x * k - 3, y0 + p.y * k - 3, 6, 6); }
+  for (const p of S.picks) if (p.k === 'chest' && revealedAt(p.x, p.y) && chestKnown(p)) { ctx.fillStyle = '#ffd43b'; ctx.fillRect(x0 + p.x * k - 3, y0 + p.y * k - 3, 6, 6); }
   if (S.boss) { ctx.fillStyle = '#ff2a2a'; ctx.fillRect(x0 + S.boss.x * k - 4, y0 + S.boss.y * k - 4, 8, 8); }
   if (S.portal) { ctx.fillStyle = Math.floor(S.time * 4) % 2 ? '#b066ff' : '#fff'; ctx.fillRect(x0 + S.portal.x * k - 4, y0 + S.portal.y * k - 4, 8, 8); }
   ctx.strokeStyle = 'rgba(255,255,255,0.35)'; ctx.lineWidth = 1;
