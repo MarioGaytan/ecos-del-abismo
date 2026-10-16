@@ -13,6 +13,17 @@ Todo está hecho con HTML5 Canvas puro. No usa motor ni librerías, y tampoco im
 
 Se juega con **teclado y ratón** en PC o con **controles táctiles** en el celular.
 
+### Jugar sin internet 📲
+
+El juego es una **PWA** (app web instalable): después de abrirlo una vez con internet, queda guardado en el dispositivo y funciona sin conexión.
+
+- **Android (Chrome):** abre la página y toca *📲 Instalar juego* en el menú, o *⋮ → Instalar app*. Queda como app con su ícono, en pantalla completa y en horizontal.
+- **PC (Chrome o Edge):** botón *📲 Instalar juego*, o el ícono de instalar en la barra de direcciones. Se abre en su propia ventana, incluso sin internet.
+- **iPhone (Safari):** *Compartir → Añadir a pantalla de inicio*.
+- **Descargar el .zip** (botón *⬇ Descargar .zip* en PC): descomprime y abre `index.html` con doble clic. Funciona sin internet y sin instalar nada.
+
+**¿Y un APK de verdad?** Entra en [PWABuilder](https://www.pwabuilder.com), pega la URL del juego y elige *Android → Generate package*. Te descarga un APK (para instalar directo en el teléfono) y un AAB (para Google Play), sin instalar Android Studio.
+
 ### En el celular 📱
 
 El juego detecta si el dispositivo es táctil y activa los controles en pantalla:
@@ -45,6 +56,11 @@ Elijo un héroe, bajo al Abismo y sobrevivo dos minutos y medio a oleadas que no
 - **⚔ Campaña:** los 3 niveles con su jefe.
 - **∞ Hordas infinitas:** un solo mapa gigante (unas 3 veces más grande) que mezcla bosque, cripta y forja. Los enemigos cambian según el bioma que pisas y la **amenaza** sube cada 30 segundos sin parar. Cada 3 minutos llega un jefe; al derrotarlo subes una **Ascensión** (más enemigos, más élites, hordas mezcladas de los 3 biomas y +1 re-tirada) y su portal lleva al Altar de Almas. El reto es ver cuánto aguantas.
 - **Dificultad:** 🌱 Fácil, ⚔️ Normal, 🔥 Difícil o 💀 Pesadilla. Cambia la experiencia y la vida, el daño y la cantidad de enemigos. Las más difíciles dan más Esencia.
+- **Ritmo de combate:** el juego estima tu daño por segundo y acerca la vida de los enemigos a unos tiempos objetivo: un enemigo normal cae en 1–3 s, un élite en unos 10 s y un jefe en 30 s o más. Un golpe normal te quita alrededor del 6–10% de tu vida. Es una mezcla, no un reemplazo: mejorar tu daño o tu vida se sigue notando, pero nada se vuelve una esponja.
+- **Curación limitada:** las curaciones pasivas (robo de vida, regeneración, vampirismo, zonas sagradas…) comparten un tope por segundo (2,5% de tu vida + 2), y durante 1,5 s después de recibir un golpe curan la mitad. Corazones, fuentes y elixires curan de golpe y sin tope, pero son escasos.
+- **Escudo de energía:** una burbuja visible que absorbe el daño antes que la vida. Se rompe con un estallido y se reconstruye sola tras 4 s sin recibir golpes. Se consigue con *Barrera de Energía* (y se acelera con *Condensador*); el Mago empieza con un poco.
+- **Objetos temporales:** máximo 3 corazones y 1 imán en el mapa a la vez. Corazones (15 s), imanes (20 s) y almas (30 s) desaparecen si no los recoges, y parpadean antes.
+- **Grietas del Abismo:** si te quedas quieto más de 5 s, se abren grietas bajo tus pies (aviso rojo y daño fuerte), cada vez más seguido. Aunque tu build esté rota, tienes que moverte, esquivar y no dejarte acorralar.
 - **El Abismo crece contigo:** cada nivel que subes trae algo más de enemigos y más resistentes, y cada 10 niveles te lo avisa. Ese extra no da más experiencia, así que no se puede abusar.
 - **Ira del Abismo:** si arrasas sin recibir daño, el Abismo se enfada y manda más enemigos y más resistentes (sin dar más experiencia). Si vas mal, se calma. Así el reto se mantiene sin volverse imposible.
 
@@ -121,6 +137,9 @@ js/audio.js       Efectos y música sintetizados con WebAudio
 js/world.js       Generador procedural: cuevas, terreno, trampas, zonas, guardianes, niebla
 js/game.js        Motor: bucle, combate, IA, jefes, oleadas, render y HUD
 js/touch.js       Controles táctiles: doble stick, botones y aviso de orientación
+sw.js             Service worker: guarda el juego para jugar sin internet
+manifest.webmanifest  Datos de la app instalable (nombre, ícono, horizontal)
+icons/            Íconos de la app
 js/ui.js          Menú, personalización, subida de nivel, encrucijada y fin de partida
 ```
 

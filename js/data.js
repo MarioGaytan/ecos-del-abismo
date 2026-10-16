@@ -52,7 +52,7 @@ const CLASSES = {
     ult: { n: 'Furia del Titán', d: '8s: +60% daño, +50% vel. ataque, +5% robo de vida, más alcance.' },
   },
   mago: {
-    n: 'Mago', spr: 'mage', hp: 95, spd: 215, armor: 0, crit: 0.05, school: 'arcano',
+    n: 'Mago', spr: 'mage', hp: 95, spd: 215, armor: 0, crit: 0.05, school: 'arcano', shield: 0.15,
     desc: 'Proyectiles arcanos a distancia. Frágil pero escala de forma explosiva con proyectiles y área.',
     prims: [
       { id: 'arcano', n: 'Proyectil Arcano', rate: 2.6, dmg: 15, d: 'Proyectiles rápidos que buscan levemente al objetivo.' },
@@ -98,6 +98,7 @@ const UPGRADES = [
   { id: 'chispa', n: 'Chispa', ic: '⚡', sch: 'tormenta', max: 6, tx: m => `+${pct(0.1 * m)} prob. de rayo en cadena`, ap: (b, m) => b.chainCh += 0.1 * m },
   { id: 'conductor', n: 'Conductor', ic: '🔌', sch: 'tormenta', max: 5, tx: m => `+${Math.max(1, Math.floor(m))} salto de cadena, +${pct(0.15 * m)} daño de cadena`, ap: (b, m) => { b.chainJumps += Math.max(1, Math.floor(m)); b.chainDmg += 0.15 * m; } },
   { id: 'pies', n: 'Pies de Trueno', ic: '👟', sch: 'tormenta', max: 6, tx: m => `+${pct(0.08 * m)} velocidad de movimiento`, ap: (b, m) => b.speed += 0.08 * m },
+  { id: 'condensador', n: 'Condensador', ic: '🔋', sch: 'tormenta', max: 4, tx: m => `El escudo se reconstruye ${pct(0.3 * m)} más rápido`, ap: (b, m) => b.shRegen += 0.3 * m },
   { id: 'dashx', n: 'Paso Relámpago', ic: '💨', sch: 'tormenta', max: 3, minR: 1, tx: () => '+1 carga de dash', ap: b => b.dashes += 1 },
 
   { id: 'colmillos', n: 'Colmillos', ic: '🦇', sch: 'sangre', max: 6, tx: m => `+${pct(0.015 * m)} robo de vida`, ap: (b, m) => b.lifesteal += 0.015 * m },
@@ -111,6 +112,7 @@ const UPGRADES = [
   { id: 'evasion', n: 'Evasión', ic: '🌫️', sch: 'sombra', max: 5, tx: m => `+${pct(0.05 * m)} esquiva`, ap: (b, m) => b.dodge += 0.05 * m },
   { id: 'asesino', n: 'Instinto Asesino', ic: '🔪', sch: 'sombra', max: 6, tx: m => `+${pct(0.08 * m)} vel. ataque, +${pct(0.03 * m)} crítico`, ap: (b, m) => { b.atkSpd += 0.08 * m; b.crit += 0.03 * m; } },
 
+  { id: 'barrera', n: 'Barrera de Energía', ic: '🔰', sch: 'arcano', max: 5, tx: m => `Escudo de energía: ${pct(0.12 * m)} de tu vida máx. Absorbe daño y se reconstruye solo`, ap: (b, m) => b.shield += 0.12 * m },
   { id: 'multi', n: 'Multidisparo', ic: '✳️', sch: 'arcano', max: 5, minR: 1, tx: m => `+${Math.max(1, Math.floor(m - 0.5))} proyectil`, ap: (b, m) => b.proj += Math.max(1, Math.floor(m - 0.5)) },
   { id: 'amplif', n: 'Amplificar', ic: '⭕', sch: 'arcano', max: 6, tx: m => `+${pct(0.12 * m)} área`, ap: (b, m) => b.area += 0.12 * m },
   { id: 'celer', n: 'Celeridad', ic: '⏳', sch: 'arcano', max: 6, tx: m => `-${pct(0.07 * m)} enfriamientos`, ap: (b, m) => b.cdr += 0.07 * m },

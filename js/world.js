@@ -569,7 +569,7 @@ function spawnGuardian(sh) {
   const heavy = spawns.map(s => s.e).filter(t => !['imp', 'bat', 'icebat', 'slime'].includes(t));
   const p = randomFloorAround(sh.x, sh.y, 60, 150) || { x: sh.x, y: sh.y + 90 };
   const e = spawnEnemy(pick(heavy.length ? heavy : ['skel']), p.x, p.y, true);
-  e.guardian = true; e.maxHp *= 2; e.hp = e.maxHp; e.sc *= 1.15; e.r *= 1.12; e.gT = 2.5;
+  e.guardian = true; e.maxHp = Math.max(e.maxHp * 1.4, (P.dpsEst || 30) * 18); e.hp = e.maxHp; e.sc *= 1.15; e.r *= 1.12; e.gT = 2.5;   // ~18 s de tu DPS
   sh.g = e;
   banner('🛡 Guardián del santuario', 'Derrótalo para poder activar ' + SHRINES[sh.type].n, 2.2, '#ffb020');
   ring(e.x, e.y, 10, 160, 0.5, '#ffb020', 6);

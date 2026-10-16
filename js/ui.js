@@ -176,7 +176,7 @@ const UI = {
     $('rerollBtn').disabled = P.rerolls <= 0;
   },
   reroll() { if (P.rerolls <= 0) return; P.rerolls--; AU.sfx('ui'); this.roll(); },
-  skip() { heal(P.s.maxHp * 0.15); S.souls += 3; this.closeLevelUp(); },
+  skip() { heal(P.s.maxHp * 0.15, true); S.souls += 3; this.closeLevelUp(); },
   choose(i) {
     if (this.guard()) return;
     const c = this.choices[i]; if (!c) return;
@@ -348,6 +348,8 @@ function upgradeUseful(u) {
     case 'corazon': case 'pirom': return s.burnCh > 0 || has('orbes');   // necesitan algo que queme
     case 'conductor': return s.chainCh > 0 || has('rayos');              // necesitan rayos en cadena
     case 'singularidad': return (P.ups.iman || 0) >= 3;
+    case 'condensador': return s.shield > 0;                            // sin escudo no sirve
+    case 'barrera': return s.shield < 0.8;
   }
   return true;
 }
@@ -396,7 +398,7 @@ function applyChoice(c) {
     u.ap(P.b, c.m);
     P.ups[c.id] = (P.ups[c.id] || 0) + 1;
     recalc();
-    if (u.heal) heal(u.heal(c.m));
+    if (u.heal) heal(u.heal(c.m), true);
     addSchool(u.sch, c.pts);
   } else if (c.kind === 'wnew') {
     P.weapons.push({ id: c.id, lvl: 1, evo: false, t: 0.5 });
@@ -410,7 +412,7 @@ function applyChoice(c) {
     ring(P.x, P.y, 10, 320, 0.7, '#ffb020', 10);
     addSchool(c.sch, c.pts);
   } else {
-    heal(P.s.maxHp * 0.4); S.souls += 5;
+    heal(P.s.maxHp * 0.4, true); S.souls += 5;
   }
 }
 
@@ -419,7 +421,7 @@ function buildSummary(compact) {
   const rows = [
     ['Daño', pct(s.dmg)], ['Vel. ataque', pct(s.atkSpd)], ['Crítico', pct(Math.min(1, s.crit))], ['Daño crítico', 'x' + num(s.critMult)],
     ['Proyectiles extra', s.proj], ['Perforación', s.pierce], ['Área', pct(s.area)], ['Enfriamientos', '-' + pct(s.cdr)],
-    ['Vida máx.', s.maxHp], ['Regeneración', num(s.regen) + '/s'], ['Armadura', num(s.armor)], ['Robo de vida', pct(s.lifesteal)],
+    ['Vida máx.', s.maxHp], ['Escudo', s.shieldMax ? s.shieldMax + ' (recarga x' + num(s.shRegen) + ')' : '—'], ['Curación pasiva máx.', num(healCap()) + '/s'], ['Regeneración', num(s.regen) + '/s'], ['Armadura', num(s.armor)], ['Robo de vida', pct(s.lifesteal)],
     ['Esquiva', pct(s.dodge)], ['Velocidad', pct(s.speed)], ['Prob. quemar', pct(Math.min(1, s.burnCh))], ['Ralentizar', pct(s.slow)],
     ['Congelar', pct(s.freezeCh)], ['Rayo en cadena', pct(s.chainCh) + ' · ' + s.chainJumps + ' saltos'], ['Suerte', Math.round(s.luck)], ['Experiencia', pct(s.xp)],
   ];

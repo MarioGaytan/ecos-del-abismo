@@ -178,11 +178,12 @@ function startRun(clsId, startLvl, endless) {
     lifesteal: 0, dodge: 0, speed: 1, magnet: 95,
     xp: 1, cdr: 0, dashes: 1, luck: 0,
     burnCh: 0, burnDmg: 1, burnBonus: 0, slow: 0, freezeCh: 0, chainCh: 0, chainJumps: 2, chainDmg: 0.6,
-    thorns: 0, souls: 1,
+    thorns: 0, souls: 1, shield: C.shield || 0, shRegen: 1,
   };
   P.schools[C.school] = 1;
   recalc();
-  P.hp = P.s.maxHp; P.dashCh = P.s.dashes;
+  P.hp = P.s.maxHp; P.dashCh = P.s.dashes; P.sh = P.s.shieldMax; P.shDelay = 0; P.healBudget = 0; P.woundT = 0; P.campT = 0; P.anchor = null;
+  P.dpsEst = estimateDps();
   const DF = DIFFS[SAVE.settings.diff] || DIFFS.normal;
   S = { kills: 0, souls: 0, runTime: 0, mods: { hp: DF.hp, spawn: DF.spawn, xp: DF.xp, dmg: DF.dmg, soul: 1 }, diff: DF, endless: !!endless, press: 0, pressT: 0, pendingLv: 0, startLvl: endless ? 0 : startLvl, cleared: 0, dmgDone: 0, dmgBy: {}, chestQueue: [], soulsEarned: 0, shopBuys: {}, combo: 0, comboT: 0, bestCombo: 0, hemo: 0 };
   if (!endless && startLvl > 0) {  // niveles de prueba: empiezas con subidas de nivel acumuladas
@@ -262,6 +263,7 @@ function recalc() {
   s.dodge = Math.min(0.6, s.dodge); s.cdr = Math.min(0.65, s.cdr); s.slow = Math.min(0.7, s.slow);
   s.crit = Math.min(0.8, s.crit); s.critMult = Math.min(4, s.critMult); s.proj = Math.min(6, s.proj);
   s.area = Math.min(2.6, s.area); s.lifesteal = Math.min(0.12, s.lifesteal);
+  s.shield = Math.min(0.8, s.shield); s.shieldMax = Math.round(s.maxHp * s.shield);
   s.chainCh = Math.min(0.5, s.chainCh); s.chainJumps = Math.min(6, s.chainJumps); s.chainDmg = Math.min(1, s.chainDmg);
   if (s.atkSpd > 2) s.atkSpd = 2 + (s.atkSpd - 2) * 0.5;   // más allá de x2, rinde la mitad
   s.maxHp = Math.round(s.maxHp);
@@ -385,8 +387,17 @@ function chain(from, dmg, jumps) {
   }
   AU.sfx('zap');
 }
-function heal(v) {
+// Curación: las "de golpe" (corazón, fuente, elixir…) son libres; las pasivas (robo de vida,
+// regeneración, vampirismo…) comparten un tope por segundo y se reducen a la mitad tras recibir un golpe.
+function healCap() { return P.s.maxHp * 0.025 + 2; }
+function heal(v, burst) {
   if (P.hp >= P.s.maxHp) return;
+  if (!burst) {
+    if (P.woundT > 0) v *= 0.5;                 // herida reciente
+    v = Math.min(v, P.healBudget);
+    P.healBudget -= v;
+    if (v <= 0) return;
+  }
   P.hp = Math.min(P.s.maxHp, P.hp + v);
   P.healAcc += v;
 }
@@ -412,9 +423,10 @@ function killEnemy(e) {
   // botín
   dropGem(e.x, e.y, e.xp);
   const luck = 1 + P.s.luck / 100;
-  if (Math.random() < 0.012 * luck) S.picks.push({ k: 'heart', x: e.x, y: e.y });
-  if (Math.random() < 0.07 * luck) S.picks.push({ k: 'soul', x: e.x + rnd(-6, 6), y: e.y + rnd(-6, 6), v: e.elite ? 6 : 1 });
-  if (Math.random() < 0.0025 * luck) S.picks.push({ k: 'magnet', x: e.x, y: e.y });
+  const count = k => { let c = 0; for (const p of S.picks) if (p.k === k) c++; return c; };
+  if (Math.random() < 0.012 * luck && count('heart') < 3) { const sp = safeSpot(e.x, e.y); S.picks.push({ k: 'heart', x: sp.x, y: sp.y, life: 15 }); }
+  if (Math.random() < 0.07 * luck) S.picks.push({ k: 'soul', x: e.x + rnd(-6, 6), y: e.y + rnd(-6, 6), v: e.elite ? 6 : 1, life: 30 });
+  if (Math.random() < 0.0025 * luck && count('magnet') < 1) { const sp = safeSpot(e.x, e.y); S.picks.push({ k: 'magnet', x: sp.x, y: sp.y, life: 20 }); }
   if (e.guardian) { for (let i = 0; i < 8; i++) S.picks.push({ k: 'soul', x: e.x + rnd(-40, 40), y: e.y + rnd(-40, 40), v: 2 }); }
   else if (e.elite && (!e.randomElite || Math.random() < 0.35)) { const sp = safeSpot(e.x, e.y); S.picks.push({ k: 'chest', x: sp.x, y: sp.y, tier: 1 }); banner('¡Élite derrotado!', 'Recoge el cofre', 1.5, '#ffd43b'); }
   // escuelas
@@ -432,7 +444,7 @@ function killEnemy(e) {
 function comboMilestone(n) {
   const rw = {
     25: ['+15 de definitiva', () => { P.ult = Math.min(100, P.ult + 15); }],
-    50: ['Curación 20% y +15 definitiva', () => { heal(P.s.maxHp * 0.2); P.ult = Math.min(100, P.ult + 15); }],
+    50: ['Curación 20% y +15 definitiva', () => { heal(P.s.maxHp * 0.2, true); P.ult = Math.min(100, P.ult + 15); }],
     100: ['¡Imán total y +10 almas!', () => { for (const g of S.gems) g.mag = true; S.souls += 10; }],
     200: ['¡Cofre gratis!', () => { S.picks.push({ k: 'chest', x: P.x + rnd(-60, 60), y: P.y + rnd(-60, 60), tier: 1 }); }],
     400: ['¡Subida de nivel extra!', () => { S.pendingLv++; }],
@@ -459,6 +471,18 @@ function hurtPlayer(d, src, dot) {
   if (P.inZone === 'maldita') d *= 1.3;
   const arm = P.s.armor + (P.warcryT > 0 ? 8 : 0);
   d = Math.max(d * 0.25, d - arm);
+  P.woundT = 1.5;
+  P.shDelay = 4 / P.s.shRegen;                  // el escudo espera 4 s sin golpes para reconstruirse
+  if (P.sh > 0) {
+    const ab = Math.min(P.sh, d); P.sh -= ab; d -= ab;
+    if (!dot) txt(P.x, P.y - 44, '-' + Math.round(ab), '#8ff3ff', 14);
+    if (P.sh <= 0) {                             // escudo roto
+      P.sh = 0; ring(P.x, P.y, 10, 70, 0.35, '#8ff3ff', 5);
+      part(P.x, P.y - 10, '#bfefff', 18, 260, 0.5, 4); AU.sfx('crit');
+      txt(P.x, P.y - 58, '¡Escudo roto!', '#8ff3ff', 18);
+    }
+    if (d <= 0) { if (!dot) { P.iframes = 0.35; AU.sfx('hit'); } return; }
+  }
   P.hp -= d;
   if (!dot) {
     P.iframes = 0.55; P.hurtFlash = 0.25; shake(8); AU.sfx('hurt');
@@ -565,6 +589,33 @@ function updatePlayer(dt) {
   }
   // feedback de curación
   if (P.healAcc >= 5) { txt(P.x, P.y - 34, '+' + Math.round(P.healAcc), '#5bff8a', 13); P.healAcc = 0; }
+  const cap = healCap();
+  P.healBudget = Math.min(cap, P.healBudget + cap * dt);
+  P.woundT -= dt;
+  if (s.shieldMax > 0) {
+    if (P.shDelay > 0) P.shDelay -= dt;
+    else if (P.sh < s.shieldMax) {
+      if (P.sh === 0) { AU.sfx('pick'); ring(P.x, P.y, 40, 10, 0.4, '#8ff3ff', 3); }
+      P.sh = Math.min(s.shieldMax, P.sh + s.shieldMax * 0.5 * s.shRegen * dt);   // se llena en ~2 s
+    }
+  } else P.sh = 0;
+  // Grietas del Abismo: quedarse quieto más de 5 s abre grietas bajo tus pies
+  if (!P.anchor || (P.x - P.anchor.x) ** 2 + (P.y - P.anchor.y) ** 2 > 190 * 190) { P.anchor = { x: P.x, y: P.y }; P.campT = 0; }
+  else if (S.t > 15 && S.phase !== 'cleared') {
+    P.campT += dt;
+    if (P.campT > 5) {
+      P.crackT = (P.crackT || 0) - dt;
+      if (P.crackT <= 0) {
+        P.crackT = Math.max(0.7, 1.6 - (P.campT - 5) * 0.08);   // cada vez más seguido
+        if (!S.crackWarned) { S.crackWarned = true; banner('⚠ El Abismo se agrieta', 'No te quedes quieto: muévete por el mapa', 2.4, '#ff5a3a'); }
+        const n = P.campT > 12 ? 2 : 1;
+        for (let i = 0; i < n; i++) {
+          const x = P.x + (i ? rnd(-140, 140) : rnd(-40, 40)), y = P.y + (i ? rnd(-140, 140) : rnd(-40, 40));
+          S.fx.push({ k: 'warn', x, y, r: 95, t: 0, delay: 1.05, dmg: P.s.maxHp * 0.14 + P.s.armor, col: '#ff3a1a' });
+        }
+      }
+    }
+  }
 }
 
 function dashCd() { return 1.3 * (1 - P.s.cdr * 0.5) * (P.hyb.fantasma ? 0.6 : 1); }
@@ -919,14 +970,52 @@ function eShoot(x, y, a, spd, dmg, col, r) {
 // =====================================================================
 //  ENEMIGOS
 // =====================================================================
+// =====================================================================
+//  RITMO DE COMBATE — estima tu DPS a un solo objetivo y acerca la vida
+//  y el daño de los enemigos a unos tiempos objetivo:
+//    normal 1-3 s · élite ~10 s · jefe 30 s o más · un golpe normal ≈ 6% de tu vida.
+//  Es una media geométrica entre la fórmula de dificultad y el objetivo,
+//  así mejorar tu daño o tu vida SIGUE notándose, pero nada se vuelve esponja.
+// =====================================================================
+function estimateDps() {
+  const s = P.s, C = P.C, L = l => l;
+  const crit = 1 + Math.min(0.8, s.crit) * (s.critMult - 1);
+  const per = { mandoble: 1, lanza: 1, arcano: 1 + s.proj * 0.4, fuego: 1.4 + s.proj * 0.4, dagas: 1.6 + s.proj * 0.35, ballesta: 1 + s.proj * 0.4 }[C.prim.id] || 1;
+  let dps = C.prim.dmg * C.prim.rate * s.atkSpd * per;
+  const cd = Math.max(0.35, 1 - s.cdr);
+  for (const w of P.weapons) {
+    const l = L(w.lvl), ev = w.evo ? 2 : 1;
+    dps += ev * ({
+      orbes: (9 + 4 * l) * 1.2, aura: (4 + 3 * l) * 1.6, rayos: (16 + 8 * l) / ((2 - 0.18 * l) * cd),
+      dagas: (8 + 3 * l) * (l + 1) * 0.5 / cd, craneos: (14 + 6 * l) * l / (2.4 * cd),
+      meteoro: (30 + 15 * l) * (l >= 3 ? 2 : 1) / ((3.6 - 0.3 * l) * cd),
+    }[w.id] || 0);
+  }
+  dps *= s.dmg * crit;
+  if (s.burnCh > 0) dps += 7 * s.burnDmg * s.dmg * (1 + P.lvl * 0.05) * Math.min(1, s.burnCh);
+  return dps * (1 + Math.min(0.5, s.chainCh) * Math.min(1, s.chainDmg) * 0.5);
+}
+// mezcla: valor de la fórmula ↔ objetivo, acotado a [objetivo·lo, objetivo·hi]
+const pace = (formula, target, lo, hi) => clamp(Math.sqrt(Math.max(1, formula) * target), target * lo, target * hi);
+function enemyHpTarget(d, elite) {
+  const ttk = elite ? 10 : 2.4 * Math.pow(clamp(d.hp / 20, 0.4, 4), 0.5);   // limo ≈ 1.9 s, gólem ≈ 3.5 s
+  return (P.dpsEst || 30) * ttk;
+}
+function enemyDmgTarget(d, elite) {
+  return P.s.maxHp * 0.06 * clamp(d.dmg / 9, 0.6, 2.2) * (elite ? 1.4 : 1);
+}
+
 function spawnEnemy(type, x, y, elite) {
   const d = ENEMIES[type];
   const tm = S.endless ? 1 : 1 + S.t / 60 * 0.45, pr = S.press || 0;
   const ls = lvlScale();
-  const hp = d.hp * S.L.hp * tm * S.mods.hp * ls * (1 + pr * 0.6) * (elite ? 9 : 1);
+  const hpF = d.hp * S.L.hp * tm * S.mods.hp * ls * (1 + pr * 0.6) * (elite ? 9 : 1);
+  const dmgF = d.dmg * S.L.dmg * S.mods.dmg * (S.endless ? 1 : 1 + S.t / LEVEL_TIME * 0.3) * (1 + pr * 0.25) * (1 + (ls - 1) * 0.5) * (elite ? 1.5 : 1);
+  const DF = S.diff || DIFFS.normal;
+  const hp = pace(hpF, enemyHpTarget(d, elite) * DF.hp * (1 + pr * 0.4), 0.5, 2.2);
   const e = {
     id: S.nextId++, type, def: d, x, y, r: d.r * (elite ? 1.4 : 1), hp, maxHp: hp,
-    spd: d.spd * rnd(0.9, 1.1), dmg: d.dmg * S.L.dmg * S.mods.dmg * (S.endless ? 1 : 1 + S.t / LEVEL_TIME * 0.3) * (1 + pr * 0.25) * (1 + (ls - 1) * 0.5) * (elite ? 1.5 : 1),
+    spd: d.spd * rnd(0.9, 1.1), dmg: pace(dmgF, enemyDmgTarget(d, elite) * DF.dmg, 0.5, 1.8),
     xp: d.xp * (elite ? 15 : 1) / (1 + pr * 0.5) / (1 + P.lvl * 0.012) / (1 + (S.asc || 0) * 0.15),    sc: d.sc * (elite ? 1.4 : 1), spr: getSpr(d.spr, d.pal, elite), elite: !!elite,
     kvx: 0, kvy: 0, flash: 0, slowT: 0, slowAmt: 0, freezeT: 0, burnT: 0, burnDps: 0, burnTick: 0.5,
     t: rnd(0.5, 2), st: 'move', face: 0, wob: Math.random() * TAU, dead: false, z: 0,
@@ -995,6 +1084,7 @@ function pressureTick(dt) {
   S.pressT -= dt;
   if (S.pressT > 0) return;
   S.pressT = 1;
+  P.dpsEst = P.dpsEst ? P.dpsEst * 0.7 + estimateDps() * 0.3 : estimateDps();
   const hpF = P.hp / P.s.maxHp;
   let near = 0; for (const e of S.enemies) if ((e.x - P.x) ** 2 + (e.y - P.y) ** 2 < 520 * 520) near++;
   if (hpF > 0.7 && near < 14) S.press += 0.035;
@@ -1158,10 +1248,13 @@ function startBoss() {
   const B = BOSSES[S.L.boss];
   const sp = randomFloorAround(P.x, P.y, 360, 480, 40) || { x: P.x + 200, y: P.y };
   const x = sp.x, y = sp.y;
-  const hp = B.hp * S.mods.hp * (S.endless ? (0.6 + S.bossN * 0.55) * Math.max(1, S.L.hp * 0.35) : (S.startLvl > 0 && S.lvlIdx === S.startLvl ? 0.8 : 1));
+  const hpF = B.hp * S.mods.hp * (S.endless ? (0.6 + S.bossN * 0.55) * Math.max(1, S.L.hp * 0.35) : (S.startLvl > 0 && S.lvlIdx === S.startLvl ? 0.8 : 1));
+  P.dpsEst = estimateDps();
+  const ttk = S.endless ? 32 + S.bossN * 8 : [30, 38, 46][S.lvlIdx] || 40;   // segundos de tu DPS
+  const hp = pace(hpF, P.dpsEst * ttk * (S.diff || DIFFS.normal).hp, 0.7, 1.8);
   const e = {
     id: S.nextId++, boss: true, bid: S.L.boss, B, def: { blood: '#fff', kres: 1 }, x, y, r: B.r, hp, maxHp: hp,
-    spd: B.spd, dmg: B.dmg * S.L.dmg * S.mods.dmg, sc: B.sc, spr: getSpr(B.spr, B.pal), kvx: 0, kvy: 0, flash: 0,
+    spd: B.spd, dmg: pace(B.dmg * S.L.dmg * S.mods.dmg, P.s.maxHp * 0.16 * (S.diff || DIFFS.normal).dmg, 0.6, 1.6), sc: B.sc, spr: getSpr(B.spr, B.pal), kvx: 0, kvy: 0, flash: 0,
     slowT: 0, slowAmt: 0, freezeT: 0, burnT: 0, burnDps: 0, burnTick: 0.5, st: 'intro', t: 1.5, atk: 2.5,
     face: 0, z: 0, phase2: false, ang: 0, alpha: 1, dead: false,
   };
@@ -1350,11 +1443,12 @@ function updatePickups(dt) {
     S.gems.push({ x: far[0].x, y: far[0].y, v: tot * 0.5, mag: false, sp: 0, life: 20 });
   }
   for (const p of S.picks) {
+    if (p.life !== undefined) { p.life -= dt; if (p.life <= 0) { p.done = true; continue; } }   // temporales
     const dx = P.x - p.x, dy = P.y - p.y, d2 = dx * dx + dy * dy;
     if (p.k === 'soul' && d2 < mg2) { const d = Math.sqrt(d2) || 1; p.x += dx / d * 600 * dt; p.y += dy / d * 600 * dt; }
     if (d2 < (P.r + 18) ** 2) {
       p.done = true;
-      if (p.k === 'heart') { heal(P.s.maxHp * 0.25); AU.sfx('pick'); ring(P.x, P.y, 5, 50, 0.3, '#5bff8a'); }
+      if (p.k === 'heart') { heal(P.s.maxHp * 0.2, true); AU.sfx('pick'); ring(P.x, P.y, 5, 50, 0.3, '#5bff8a'); }
       else if (p.k === 'soul') { const v = p.v * P.s.souls * S.mods.soul * (P.inZone === 'maldita' ? 1.6 : 1); S.souls += v; S.soulsEarned += v; AU.sfx('gem'); }
       else if (p.k === 'magnet') { for (const g of S.gems) g.mag = true; AU.sfx('pick'); banner('🧲 ¡Imán!', '', 1); }
       else if (p.k === 'chest') { AU.sfx('chest'); UI.openLevelUp(p.tier === 3 ? 'boss' : p.tier === 2 ? 'puzzle' : 'chest'); }
@@ -1388,7 +1482,7 @@ function activateShrine(sh) {
   AU.sfx('chest');
   switch (sh.type) {
     case 'poder': P.powerT = 25; break;
-    case 'fuente': P.b.maxHp += 10; recalc(); heal(P.s.maxHp * 0.6); break;
+    case 'fuente': P.b.maxHp += 10; recalc(); heal(P.s.maxHp * 0.6, true); break;
     case 'saber': UI.openLevelUp('chest'); break;
     case 'tiempo': S.timeSlow = 8; break;
     case 'maldito': {
@@ -1490,7 +1584,7 @@ function applyPath(id) {
     case 'destino': P.rerolls += 3; b.luck += 20; recalc(); break;
   }
   S.souls += 25 * (S.lvlIdx + 1);
-  heal(P.s.maxHp * 0.3);
+  heal(P.s.maxHp * 0.3, true);
   if (S.endless) { S.portal = null; P.iframes = 2; }   // en el infinito se sigue en el mismo mapa
   else loadLevel(S.lvlIdx + 1);
   mode = 'play';
@@ -1652,6 +1746,7 @@ function render() {
   for (const p of S.picks) {
     if (!vis(p.x, p.y, 20)) continue;
     const bob = Math.sin(S.time * 3 + p.x) * 3;
+    ctx.globalAlpha = p.life !== undefined && p.life < 4 ? (Math.floor(S.time * 8) % 2 ? 0.3 : 1) : 1;
     if (p.k === 'soul') {
       ctx.drawImage(glowSpr('#b066ff'), p.x - 14, p.y - 14 + bob, 28, 28);
       ctx.fillStyle = '#e8d0ff'; ctx.fillRect(p.x - 3, p.y - 3 + bob, 6, 6);
@@ -1664,6 +1759,7 @@ function render() {
       drawSpr(getSpr(p.k), p.x, p.y + 4 + bob, 3, 0);
     }
   }
+  ctx.globalAlpha = 1;
   // santuarios
   for (const sh of S.shrines) {
     if (!vis(sh.x, sh.y, 60)) continue;
@@ -1837,6 +1933,21 @@ function drawPlayer() {
   if (P.ultT > 0 && P.cls === 'picaro') ctx.globalAlpha = 0.55;
   if (!blink || P.dashT > 0) drawSpr(spr, P.x, P.y + 12 - bob, 3, P.face, P.hurtFlash > 0 ? { tint: '#ff4a4a' } : null);
   ctx.globalAlpha = 1;
+  // escudo de energía: burbuja visible, más opaca cuanto más lleno
+  if (P.s.shieldMax > 0) {
+    const f = P.sh / P.s.shieldMax;
+    if (f > 0) {
+      const pulse = 1 + Math.sin(S.time * 4) * 0.04;
+      ctx.drawImage(glowSpr('#5ad8ff'), P.x - 40 * pulse, P.y - 46 * pulse, 80 * pulse, 80 * pulse);
+      ctx.strokeStyle = rgba('#8ff3ff', 0.25 + f * 0.6); ctx.lineWidth = 2 + f * 2;
+      ctx.beginPath(); ctx.arc(P.x, P.y - 6, 30 * pulse, 0, TAU); ctx.stroke();
+      ctx.strokeStyle = rgba('#ffffff', 0.35 * f); ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(P.x, P.y - 6, 30 * pulse, S.time * 2, S.time * 2 + 1.2); ctx.stroke();
+    } else if (P.shDelay <= 0.8) {                // a punto de reconstruirse: parpadea
+      ctx.setLineDash([4, 6]); ctx.strokeStyle = 'rgba(143,243,255,0.5)'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(P.x, P.y - 6, 30, 0, TAU); ctx.stroke(); ctx.setLineDash([]);
+    }
+  }
   // indicador de apuntado
   ctx.strokeStyle = 'rgba(255,255,255,0.35)'; ctx.lineWidth = 2;
   ctx.beginPath(); ctx.arc(P.x, P.y, 34, P.aim - 0.25, P.aim + 0.25); ctx.stroke();
@@ -1905,8 +2016,9 @@ function drawHUD() {
   bar(0, 0, W, 8, P.xp / P.xpNext, '#4aa3ff', '#101830');
   hudText('NV ' + P.lvl, 14, 30, 16, '#8fd0ff');
   // vida
-  bar(14, 40, 240, 16, P.hp / s.maxHp, '#e0344a');
-  hudText(Math.ceil(P.hp) + ' / ' + s.maxHp, 134, 54, 12, '#fff', 'center');
+  bar(14, 40, 240, 16, P.hp / s.maxHp, P.woundT > 0 ? '#b0283a' : '#e0344a');
+  if (s.shieldMax > 0) { ctx.fillStyle = 'rgba(143,243,255,0.85)'; ctx.fillRect(14, 40, 240 * (P.sh / s.shieldMax), 4); }
+  hudText(Math.ceil(P.hp) + ' / ' + s.maxHp + (s.shieldMax > 0 ? '  🛡' + Math.ceil(P.sh) : ''), 134, 54, 12, '#fff', 'center');
   // ultimate
   bar(14, 64, 240, 8, P.ultT > 0 ? 1 : P.ult / 100, P.ultT > 0 ? '#ffb020' : P.ult >= 100 ? '#ffd43b' : '#a07020');
   hudText(P.ult >= 100 && P.ultT <= 0 ? (T ? '' : '[Q] ') + P.C.ult.n + ' ¡LISTA!' : (T ? '' : 'Q · ') + P.C.ult.n, 14, 88, 11, P.ult >= 100 ? '#ffd43b' : '#c9b080');
@@ -1994,7 +2106,7 @@ function drawHUD() {
     hudText('RACHA +' + Math.round((comboMul() - 1) * 100) + '% EXP', cx2, cy2 + 16, 10, '#ccc', 'right');
     ctx.fillStyle = col; ctx.fillRect(cx2 - 100, cy2 + 22, 100 * (S.comboT / 2.5), 3);
   }
-  const hint = terrainHint();
+  const hint = P.campT > 4 && S.t > 15 ? ['⚠ ¡Muévete! El Abismo castiga a quien se queda quieto', '#ff7a5a'] : terrainHint();
   if (hint) hudText(hint[0], W / 2, T ? H - 26 : H - 22, 12, hint[1], 'center');
   drawMinimap();
   if (!T) hudText('TAB: build · ESC: pausa', W - 14, H - 14, 10, '#778', 'right');
